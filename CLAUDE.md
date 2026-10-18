@@ -40,4 +40,4 @@ La conversación principal coordina: divide el trabajo en tareas y llama a cada 
 ## Puesta en marcha en una PC nueva
 
 1. Instalar Git, Node.js, Python y Podman (`winget install -e --id RedHat.Podman`), luego `podman machine init` y `podman machine start`, y `pip install podman-compose`.
-2. Clonar el repo y abrirlo con Claude Code: toma del repo los agentes, las skills de diseño (`.claude/skills/`: impeccable, design-taste-frontend, emil-design-eng) y los servidores MCP (`.mcp.json`: Playwright y Figma). Figma pide iniciar sesión la primera vez (`/mcp`).
+2. Clonar el repo y abrirlo con Claude Code: toma del repo los agentes, las skills de diseño (`.claude/skills/`: impeccable, design-taste-frontend y el paquete de Emil Kowalski) y los servidores MCP (`.mcp.json`: Playwright y Figma). Figma pide iniciar sesión la primera vez (`/mcp`).
