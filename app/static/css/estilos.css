@@ -517,6 +517,9 @@ input::placeholder { color: var(--tinta-3); opacity: 1; }
   .ficha-quitar:hover { background: color-mix(in srgb, var(--tinta) 10%, transparent); color: var(--tinta); }
 }
 .ficha-quitar svg { width: 0.75rem; height: 0.75rem; }
+/* Serie fija de los indicadores de Uruguay: misma caja que el buscador, sin edición. */
+.serie-fija { cursor: default; }
+.serie-fija .ficha { min-height: 2rem; padding-right: 0.625rem; }
 
 .buscador { position: relative; flex: 1 1 9rem; min-width: 9rem; }
 .buscador input {

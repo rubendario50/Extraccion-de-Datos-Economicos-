@@ -1,4 +1,7 @@
-"""Panel principal: elegir indicador, países y años, y ver la gráfica con la tabla."""
+"""Panel principal: elegir indicador, países y años, y ver la gráfica con la tabla.
+
+Los indicadores nacionales (Uruguay) tienen una sola serie y no usan el selector de países.
+"""
 
 import json
 
@@ -6,7 +9,7 @@ from fastapi import APIRouter, Depends, Request
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.api.series import fuente_por_defecto, fuentes_del_indicador
+from app.api.series import PAIS_NACIONAL, fuente_por_defecto, fuentes_del_indicador, tabla_de
 from app.auth.dependencias import usuario_actual
 from app.db import get_db
 from app.models import DatoInternacionalAnual, Indicador, Pais, PaisCodigoExterno, Usuario
@@ -18,19 +21,21 @@ router = APIRouter()
 NOMBRES_FUENTE = {
     "FMI_DM": "FMI, World Economic Outlook (DataMapper)",
     "BM": "Banco Mundial, World Development Indicators",
+    "INE": "Instituto Nacional de Estadística (INE)",
+    "BCU": "Banco Central del Uruguay (BCU), cotizaciones interbancarias",
 }
 # Nombre corto para el selector de fuente (el completo no entra en el control).
-NOMBRES_CORTOS_FUENTE = {"FMI_DM": "FMI", "BM": "Banco Mundial"}
+NOMBRES_CORTOS_FUENTE = {"FMI_DM": "FMI", "BM": "Banco Mundial", "INE": "INE", "BCU": "BCU"}
 PAISES_POR_DEFECTO = ["URY", "ARG", "WEOWORLD"]
 
 
 def datos_del_panel(db: Session) -> dict:
     """Indicadores con sus fuentes, países con datos y años disponibles por fuente, para armar los controles."""
-    indicadores = db.scalars(
-        select(Indicador)
-        .where(Indicador.alcance == "internacional", Indicador.frecuencia == "anual")
-        .order_by(Indicador.id)
-    ).all()
+    # Primero los internacionales, después los de Uruguay; solo los que tienen tabla de datos.
+    indicadores = sorted(
+        (i for i in db.scalars(select(Indicador)).all() if tabla_de(i) is not None),
+        key=lambda i: (i.alcance != "internacional", i.id),
+    )
     codigos = {
         pais_id: codigo
         for pais_id, codigo in db.execute(
@@ -42,25 +47,27 @@ def datos_del_panel(db: Session) -> dict:
     salida = []
     for ind in indicadores:
         fuentes = fuentes_del_indicador(db, ind.id)
-        por_defecto = fuente_por_defecto(db, ind.id, fuentes)
+        por_defecto = fuente_por_defecto(db, ind, fuentes)
+        col_periodo, col_valor, col_indicador, col_fuente = tabla_de(ind)
         lista_fuentes = []
         for fte in fuentes:
-            filtro = [
-                DatoInternacionalAnual.indicador_id == ind.id,
-                DatoInternacionalAnual.fuente_id == fte.id,
-                DatoInternacionalAnual.valor.is_not(None),
-            ]
-            con_datos = db.scalars(select(DatoInternacionalAnual.pais_id).where(*filtro).distinct()).all()
-            desde, hasta = db.execute(
-                select(func.min(DatoInternacionalAnual.anio), func.max(DatoInternacionalAnual.anio)).where(*filtro)
-            ).one()
+            filtro = [col_indicador == ind.id, col_fuente == fte.id, col_valor.is_not(None)]
+            desde, hasta = db.execute(select(func.min(col_periodo), func.max(col_periodo)).where(*filtro)).one()
+            if ind.alcance == "nacional":
+                # Una sola serie (Uruguay); los años del selector salen de las fechas.
+                con_datos = [PAIS_NACIONAL] if desde is not None else []
+                if ind.frecuencia != "anual" and desde is not None:
+                    desde, hasta = desde.year, hasta.year
+            else:
+                ids = db.scalars(select(DatoInternacionalAnual.pais_id).where(*filtro).distinct()).all()
+                con_datos = sorted(codigos[i] for i in ids if i in paises)
             lista_fuentes.append({
                 "codigo": fte.codigo,
                 "nombre": NOMBRES_FUENTE.get(fte.codigo, fte.nombre),
                 "corto": NOMBRES_CORTOS_FUENTE.get(fte.codigo, fte.codigo),
                 "desde": desde,
                 "hasta": hasta,
-                "paises": sorted(codigos[i] for i in con_datos if i in paises),
+                "paises": con_datos,
             })
         elegida = next((f for f in lista_fuentes if por_defecto and f["codigo"] == por_defecto.codigo), None)
         salida.append({
@@ -68,6 +75,8 @@ def datos_del_panel(db: Session) -> dict:
             "nombre": ind.nombre,
             "unidad": ind.unidad,
             "escala": ind.escala,
+            "alcance": ind.alcance,
+            "frecuencia": ind.frecuencia,
             "fuentes": lista_fuentes,
             "fuente": elegida["codigo"] if elegida else None,
             # Años y países de la fuente por defecto.

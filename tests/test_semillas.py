@@ -92,3 +92,16 @@ def test_semillas_actualizan_cambios(sesion, tmp_path):
     sesion.expire_all()
     assert sesion.scalar(select(Pais.nombre).where(Pais.codigo == "001")) == "Uruguay"
     assert contar(sesion, Pais) == 1
+
+
+def test_indicadores_de_uruguay(sesion):
+    cargar_semillas(sesion)
+    nacionales = {
+        i.codigo: (i.frecuencia, [(s.fuente.codigo, s.codigo_externo) for s in i.series_externas])
+        for i in sesion.scalars(select(Indicador).where(Indicador.alcance == "nacional"))
+    }
+    assert nacionales == {
+        "IPC_UY": ("mensual", [("INE", "IPC_GENERAL")]),
+        "DESEMPLEO_UY": ("mensual", [("INE", "ECH0013")]),
+        "DOLAR_INTERBANCARIO": ("diaria", [("BCU", "2225")]),
+    }

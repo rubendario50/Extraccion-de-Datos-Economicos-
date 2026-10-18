@@ -1,19 +1,51 @@
 """Endpoint JSON de series: GET /api/series."""
 
+from datetime import date
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.analisis.indices import ErrorIndice, a_base_100
+from app.analisis.indices import ErrorIndice, a_base_100, a_base_100_promedio
 from app.auth.dependencias import usuario_actual
 from app.db import get_db
-from app.models import DatoInternacionalAnual, Fuente, Indicador, IndicadorSerieExterna, Pais, PaisCodigoExterno
+from app.models import (
+    CotizacionDiaria,
+    DatoInternacionalAnual,
+    DatoNacionalAnual,
+    DatoNacionalMensual,
+    Fuente,
+    Indicador,
+    IndicadorSerieExterna,
+    Pais,
+    PaisCodigoExterno,
+)
 
 # Toda la API exige sesión con el doble factor completo.
 router = APIRouter(prefix="/api", dependencies=[Depends(usuario_actual)])
 
 # Máximo de países por pedido; es lo mismo que permite elegir el panel.
 MAX_PAISES = 8
+
+# (alcance, frecuencia) -> (tabla, columna del período, columna del valor). Las series anuales usan
+# el año; las mensuales y diarias, una fecha (primer día del mes en las mensuales).
+TABLAS = {
+    ("internacional", "anual"): (DatoInternacionalAnual, "anio", "valor"),
+    ("nacional", "anual"): (DatoNacionalAnual, "anio", "valor"),
+    ("nacional", "mensual"): (DatoNacionalMensual, "periodo", "valor"),
+    ("nacional", "diaria"): (CotizacionDiaria, "fecha", "cierre"),
+}
+# Las series nacionales son de Uruguay: una sola serie, con este código de país.
+PAIS_NACIONAL = "URY"
+
+
+def tabla_de(ind: Indicador):
+    """Columnas (período, valor, indicador_id, fuente_id) de la tabla del indicador, o None si no hay tabla."""
+    tabla = TABLAS.get((ind.alcance, ind.frecuencia))
+    if tabla is None:
+        return None
+    modelo, periodo, valor = tabla
+    return getattr(modelo, periodo), getattr(modelo, valor), modelo.indicador_id, modelo.fuente_id
 
 
 def fuentes_del_indicador(db: Session, indicador_id: int) -> list[Fuente]:
@@ -29,23 +61,26 @@ def fuentes_del_indicador(db: Session, indicador_id: int) -> list[Fuente]:
     )
 
 
-def fuente_por_defecto(db: Session, indicador_id: int, fuentes: list[Fuente]) -> Fuente | None:
+def fuente_por_defecto(db: Session, ind: Indicador, fuentes: list[Fuente]) -> Fuente | None:
     """La primera fuente con datos guardados para el indicador (FMI antes que BM); si ninguna tiene, la primera."""
-    for fte in fuentes:
-        hay = db.scalar(
-            select(DatoInternacionalAnual.anio)
-            .where(DatoInternacionalAnual.indicador_id == indicador_id, DatoInternacionalAnual.fuente_id == fte.id)
-            .limit(1)
-        )
-        if hay is not None:
-            return fte
+    columnas = tabla_de(ind)
+    if columnas:
+        periodo, _, col_indicador, col_fuente = columnas
+        for fte in fuentes:
+            hay = db.scalar(select(periodo).where(col_indicador == ind.id, col_fuente == fte.id).limit(1))
+            if hay is not None:
+                return fte
     return fuentes[0] if fuentes else None
 
 
 @router.get("/series")
 def obtener_series(
     indicador: str = Query(description="Código interno del indicador, por ejemplo PBI_USD_CORR"),
-    paises: str = Query(description="Códigos ISO3 o del FMI DataMapper separados por coma: URY,ARG,WEOWORLD"),
+    paises: str | None = Query(
+        None,
+        description="Códigos ISO3 o del FMI DataMapper separados por coma: URY,ARG,WEOWORLD. "
+        "Obligatorio en los indicadores internacionales; los nacionales son siempre de Uruguay",
+    ),
     desde: int | None = Query(None, description="Primer año (inclusive)"),
     hasta: int | None = Query(None, description="Último año (inclusive)"),
     base: int | None = Query(None, description="Año base: si se indica, las series se expresan en índice base 100"),
@@ -57,14 +92,14 @@ def obtener_series(
     ind = db.scalar(select(Indicador).where(Indicador.codigo == indicador))
     if ind is None:
         raise HTTPException(404, f"Indicador desconocido: {indicador}")
-    if (ind.alcance, ind.frecuencia) != ("internacional", "anual"):
-        raise HTTPException(400, f"Por ahora solo hay series internacionales anuales ({indicador} es {ind.alcance} {ind.frecuencia}).")
+    if tabla_de(ind) is None:
+        raise HTTPException(400, f"Todavía no se pueden consultar series de {indicador} ({ind.alcance}, {ind.frecuencia}).")
     # Nunca se mezclan fuentes: todas las series de la respuesta salen de la misma.
     fuentes = fuentes_del_indicador(db, ind.id)
     # Como los países, la fuente no distingue mayúsculas (bm = BM); vacía equivale a no indicarla.
     pedida = (fuente or "").strip()
     if not pedida:
-        fte = fuente_por_defecto(db, ind.id, fuentes)
+        fte = fuente_por_defecto(db, ind, fuentes)
         if fte is None:
             raise HTTPException(404, f"El indicador {indicador} no tiene fuentes definidas.")
     else:
@@ -77,9 +112,13 @@ def obtener_series(
     if desde is not None and hasta is not None and desde > hasta:
         raise HTTPException(422, "`desde` no puede ser mayor que `hasta`.")
 
+    if ind.alcance == "nacional":
+        serie = serie_nacional(db, ind, fte, paises, desde, hasta, base)
+        return respuesta(ind, fte, fuentes, base, [serie])
+
     # Los códigos no distinguen mayúsculas (ury = URY) y los repetidos se quitan, conservando el orden.
     escritos: dict[str, str] = {}  # código en mayúsculas -> como lo escribió quien pidió
-    for c in paises.split(","):
+    for c in (paises or "").split(","):
         if c.strip():
             escritos.setdefault(c.strip().upper(), c.strip())
     pedidos = list(escritos)
@@ -127,12 +166,59 @@ def obtener_series(
         datos = [{"anio": anio, "valor": valor} for anio, valor in valores.items() if en_rango(anio)]
         series.append({"pais": codigo, "codigo": pais.codigo, "nombre": pais.nombre, "fuente": fte.codigo, "datos": datos})
 
+    return respuesta(ind, fte, fuentes, base, series)
+
+
+def serie_nacional(
+    db: Session, ind: Indicador, fte: Fuente, paises: str | None, desde: int | None, hasta: int | None, base: int | None
+) -> dict:
+    """La única serie de un indicador nacional (Uruguay). `desde`, `hasta` y `base` son años.
+
+    En las series mensuales y diarias cada dato lleva la fecha ISO ("2024-03-01") en lugar del año, y
+    el índice base 100 toma como 100 el promedio del año base.
+    """
+    otros = sorted({c.strip() for c in (paises or "").split(",") if c.strip() and c.strip().upper() != PAIS_NACIONAL})
+    if otros:
+        raise HTTPException(400, f"{ind.codigo} es un indicador de Uruguay: no hay series de {', '.join(otros)}.")
+    uruguay = db.scalar(select(Pais).where(Pais.iso3 == PAIS_NACIONAL))
+    col_periodo, col_valor, col_indicador, col_fuente = tabla_de(ind)
+    valores = dict(
+        db.execute(
+            select(col_periodo, col_valor)
+            .where(col_indicador == ind.id, col_fuente == fte.id)
+            .order_by(col_periodo)
+        ).all()
+    )
+    anio_de = (lambda p: p.year) if ind.frecuencia != "anual" else (lambda p: p)  # noqa: E731
+    en_rango = lambda p: (desde is None or anio_de(p) >= desde) and (hasta is None or anio_de(p) <= hasta)  # noqa: E731
+    nombre = uruguay.nombre if uruguay else "Uruguay"
+    if base is not None and any(v is not None for p, v in valores.items() if en_rango(p)):
+        try:
+            valores = a_base_100(valores, base) if ind.frecuencia == "anual" else a_base_100_promedio(valores, base)
+        except ErrorIndice as e:
+            raise HTTPException(422, f"{nombre}: {e}") from e
+    clave = "anio" if ind.frecuencia == "anual" else "fecha"
+    datos = [
+        {clave: p.isoformat() if isinstance(p, date) else p, "valor": v} for p, v in valores.items() if en_rango(p)
+    ]
+    return {
+        "pais": PAIS_NACIONAL,
+        "codigo": uruguay.codigo if uruguay else None,
+        "nombre": nombre,
+        "fuente": fte.codigo,
+        "datos": datos,
+    }
+
+
+def respuesta(ind: Indicador, fte: Fuente, fuentes: list[Fuente], base: int | None, series: list[dict]) -> dict:
     return {
         "indicador": {
             "codigo": ind.codigo,
             "nombre": ind.nombre,
             "unidad": "Índice (base 100)" if base is not None else ind.unidad,
             "escala": None if base is not None else ind.escala,
+            "alcance": ind.alcance,
+            "frecuencia": ind.frecuencia,
         },
         "fuente": fte.codigo,
         "fuente_nombre": fte.nombre,

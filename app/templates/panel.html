@@ -23,7 +23,12 @@
       <div class="campo campo-indicador">
         <label for="indicador">Indicador</label>
         <select id="indicador" name="indicador">
-          {% for ind in datos.indicadores %}<option value="{{ ind.codigo }}">{{ ind.nombre }}</option>{% endfor %}
+          {% for alcance, titulo in [("internacional", "Internacionales"), ("nacional", "Uruguay")] %}
+          {% set del_grupo = datos.indicadores | selectattr("alcance", "equalto", alcance) | list %}
+          {% if del_grupo %}<optgroup label="{{ titulo }}">
+            {% for ind in del_grupo %}<option value="{{ ind.codigo }}">{{ ind.nombre }}</option>{% endfor %}
+          </optgroup>{% endif %}
+          {% endfor %}
         </select>
       </div>
       <div class="campo campo-fuente">
@@ -43,6 +48,12 @@
                  aria-describedby="ayuda-paises" placeholder="Buscar y agregar…">
           <ul class="opciones" id="opciones-paises" role="listbox" aria-labelledby="etiqueta-paises" hidden></ul>
         </div>
+      </div>
+      {# Los indicadores de Uruguay tienen una sola serie: en lugar del buscador se muestra fija. #}
+      <div class="selector-paises serie-fija" id="serie-fija" hidden>
+        <ul class="fichas" aria-labelledby="etiqueta-paises">
+          <li class="ficha serie-1"><span class="marca-serie" aria-hidden="true"></span><span class="ficha-nombre">Uruguay</span></li>
+        </ul>
       </div>
       <p class="ayuda" id="ayuda-paises">Hasta 8 a la vez.</p>
     </div>

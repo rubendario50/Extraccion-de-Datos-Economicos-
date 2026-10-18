@@ -9,7 +9,40 @@ y el proyecto usa [versionado semántico](https://semver.org/lang/es/).
 
 - Verificación del email al registrarse y recuperación de contraseña.
 - Marcar en la gráfica y en la tabla los años que son proyecciones del FMI.
-- Datos propios de Uruguay (previsto para la próxima versión).
+- Pedir autorización al BCU antes de redistribuir o cobrar por sus datos: sus
+  términos solo permiten la reproducción sin fines de lucro, citando la
+  fuente.
+- Decidir qué hacer con el error de origen del BCU del 27/04/2000 (venta
+  1,905).
+
+## [0.2.2] - 2026-10-18
+
+Primeros datos propios de Uruguay.
+
+### Agregado
+
+- **Datos de Uruguay**, con carga automática desde fuentes oficiales:
+  - IPC del INE: índice mensual desde julio de 1937 (base octubre 2022 = 100).
+  - Tasa de desempleo del INE: mensual, Total País, desde 2006 (Encuesta
+    Continua de Hogares).
+  - Dólar interbancario del BCU: cierre de cada día hábil desde enero de
+    2000, con actualización incremental.
+- **Comandos de carga nuevos**: `python -m app.etl ine` y
+  `python -m app.etl bcu`, incluidos también en `python -m app.etl todo`.
+
+### Cambiado
+
+- En el panel, el selector de indicadores se agrupa en **Internacionales** y
+  **Uruguay**.
+- Las series mensuales y diarias se grafican con eje de fechas. En esas
+  series, el índice base 100 usa el promedio del año base.
+- Si una fuente falla, `python -m app.etl todo` sigue con las demás y al final
+  informa qué se cargó y qué falló.
+
+### Para actualizar
+
+- Hay que reconstruir la imagen con `podman-compose up -d --build`, porque hay
+  una dependencia nueva.
 
 ## [0.2.1] - 2026-10-18
 

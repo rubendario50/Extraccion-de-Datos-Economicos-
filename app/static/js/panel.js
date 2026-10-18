@@ -15,6 +15,9 @@
     fuente: $("fuente"),
     nombreFuente: $("fuente-serie"),
     selector: $("selector-paises"),
+    serieFija: $("serie-fija"),
+    etiquetaPaises: $("etiqueta-paises"),
+    ayudaPaises: $("ayuda-paises"),
     fichas: $("fichas"),
     buscar: $("buscar-pais"),
     opciones: $("opciones-paises"),
@@ -42,14 +45,49 @@
   const fmtEje = new Intl.NumberFormat("es-UY", { maximumFractionDigits: 1 });
   let fmtValor = new Intl.NumberFormat("es-UY", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 
-  function elegirFormato(series) {
+  // Las cotizaciones diarias (dólar del BCU) se publican con 3 decimales; el resto, según su tamaño.
+  function elegirFormato(series, frecuencia) {
     let maximo = 0;
     for (const s of series) for (const d of s.datos) if (d.valor != null) maximo = Math.max(maximo, Math.abs(d.valor));
-    const decimales = maximo < 10 ? 2 : 1;
+    const decimales = frecuencia === "diaria" ? 3 : maximo < 10 ? 2 : 1;
     fmtValor = new Intl.NumberFormat("es-UY", { minimumFractionDigits: decimales, maximumFractionDigits: decimales });
   }
 
-  const formatear = (v) => (v == null ? "—" : fmtValor.format(v));
+  // Valores muy chicos (el IPC de los años 40 vale 0,0000002 en base 2022) con cifras significativas.
+  const fmtChico = new Intl.NumberFormat("es-UY", { maximumSignificantDigits: 3 });
+  const formatear = (v) => (v == null ? "—" : v !== 0 && Math.abs(v) < 0.01 ? fmtChico.format(v) : fmtValor.format(v));
+
+  // ---------- Fechas (series mensuales y diarias de Uruguay) ----------
+
+  // Las series anuales traen `anio`; las mensuales y diarias, `fecha` ISO ("2024-03-01").
+  const clave = (d) => d.anio ?? d.fecha;
+  const fmtMes = new Intl.DateTimeFormat("es-UY", { month: "short", year: "numeric" });
+  const fmtMesLargo = new Intl.DateTimeFormat("es-UY", { month: "long", year: "numeric" });
+  const fmtDia = new Intl.DateTimeFormat("es-UY", { day: "2-digit", month: "2-digit", year: "numeric" });
+  const fmtMesEje = new Intl.DateTimeFormat("es-UY", { month: "short" });
+  const fmtDiaEje = new Intl.DateTimeFormat("es-UY", { day: "numeric", month: "short" });
+
+  // "2024-03-01" -> fecha local (sin corrimiento por zona horaria).
+  function aFecha(iso) {
+    const [a, m, d] = iso.split("-").map(Number);
+    return new Date(a, m - 1, d);
+  }
+
+  // Texto de un período para la tabla, el tooltip y la descripción de la gráfica.
+  // `c` es un año (series anuales), una fecha ISO o un instante en milisegundos (eje de tiempo).
+  function textoPeriodo(c, frecuencia, largo) {
+    if (!frecuencia || frecuencia === "anual") return String(c);
+    const f = typeof c === "string" ? aFecha(c) : new Date(c);
+    if (frecuencia === "mensual") return (largo ? fmtMesLargo : fmtMes).format(f);
+    return fmtDia.format(f);
+  }
+
+  // Etiquetas del eje de tiempo: el año en enero, si no el mes, y el día si hay zoom.
+  function etiquetaEjeTiempo(v) {
+    const f = new Date(v);
+    if (f.getDate() !== 1) return fmtDiaEje.format(f);
+    return f.getMonth() === 0 ? String(f.getFullYear()) : fmtMesEje.format(f).toLowerCase();
+  }
 
   function escapar(texto) {
     return String(texto).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
@@ -83,6 +121,21 @@
 
   function indicadorActual() {
     return porCodigoIndicador.get(estado.indicador);
+  }
+
+  // Indicador de Uruguay: una sola serie, sin selector de países.
+  function esNacional() {
+    const ind = indicadorActual();
+    return Boolean(ind && ind.alcance === "nacional");
+  }
+
+  function prepararPaises() {
+    const nacional = esNacional();
+    el.selector.hidden = nacional;
+    el.serieFija.hidden = !nacional;
+    el.etiquetaPaises.textContent = nacional ? "País" : "Países y regiones";
+    el.ayudaPaises.textContent = nacional ? "Serie de Uruguay." : `Hasta ${MAX_SERIES} a la vez.`;
+    if (nacional) cerrarOpciones();
   }
 
   // Fuente elegida del indicador actual: años y países con datos de esa fuente.
@@ -335,6 +388,7 @@
     const anterior = fuenteActual();
     estado.indicador = el.indicador.value;
     prepararFuentes();
+    prepararPaises();
     seguirRangoCompleto(anterior);
     prepararAnios();
     pedirSeries();
@@ -401,7 +455,7 @@
       mostrarEstado("vacio", "Todavía no hay indicadores cargados", "Cargá las semillas y los datos del FMI y del Banco Mundial para empezar.");
       return;
     }
-    if (!estado.paises.length) {
+    if (!estado.paises.length && !esNacional()) {
       grafica && grafica.clear();
       ultimaRespuesta = null;
       el.unidad.textContent = "";
@@ -417,7 +471,9 @@
     if (pedidoEnCurso) pedidoEnCurso.abort();
     const control = new AbortController();
     pedidoEnCurso = control;
-    const q = new URLSearchParams({ indicador: estado.indicador, paises: estado.paises.join(",") });
+    // Los indicadores nacionales son siempre de Uruguay: no llevan países.
+    const q = new URLSearchParams({ indicador: estado.indicador });
+    if (!esNacional()) q.set("paises", estado.paises.join(","));
     if (estado.fuente) q.set("fuente", estado.fuente);
     if (estado.desde != null) q.set("desde", estado.desde);
     if (estado.hasta != null) q.set("hasta", estado.hasta);
@@ -488,7 +544,7 @@
   }
 
   function nombreCorto(fuente) {
-    return { FMI_DM: "El FMI", BM: "El Banco Mundial" }[fuente] || "La fuente";
+    return { FMI_DM: "El FMI", BM: "El Banco Mundial", INE: "El INE", BCU: "El BCU" }[fuente] || "La fuente";
   }
 
   const tieneDatos = (s) => s.datos.some((d) => d.valor != null);
@@ -506,7 +562,7 @@
 
   function pintar(cuerpo) {
     const series = cuerpo.series;
-    elegirFormato(series);
+    elegirFormato(series, cuerpo.base == null ? cuerpo.indicador.frecuencia : null);
     el.unidad.textContent = textoUnidad(cuerpo.indicador) + (cuerpo.base != null ? ` · ${cuerpo.base} = 100` : "");
 
     const conDatos = series.filter(tieneDatos);
@@ -524,7 +580,8 @@
       el.faltantes.hidden = false;
     }
 
-    const anios = [...new Set(series.flatMap((s) => s.datos.map((d) => d.anio)))].sort((a, b) => a - b);
+    // Años (series anuales) o fechas ISO (mensuales y diarias): en los dos casos el orden natural sirve.
+    const anios = [...new Set(series.flatMap((s) => s.datos.map(clave)))].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
     if (!conDatos.length) {
       if (grafica) grafica.clear();
       const otras = (porCodigoIndicador.get(cuerpo.indicador.codigo)?.fuentes.length || 0) > 1;
@@ -563,13 +620,19 @@
     const etiquetas = pocas && !angosto;
     const slot = (s) => ranuras.get(s.pais) || 1;
     const quieto = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    // Series mensuales y diarias: eje de tiempo con pares [fecha, valor]; las anuales siguen con años.
+    const frecuencia = cuerpo.indicador.frecuencia;
+    const conFechas = Boolean(frecuencia && frecuencia !== "anual");
 
     const series = cuerpo.series.map((s, i) => {
-      const valores = new Map(s.datos.map((d) => [d.anio, d.valor]));
+      const valores = new Map(s.datos.map((d) => [clave(d), d.valor]));
       const serie = {
         type: "line",
         name: s.nombre,
-        data: anios.map((a) => (valores.has(a) ? valores.get(a) : null)),
+        data: conFechas
+          ? s.datos.map((d) => [aFecha(d.fecha).getTime(), d.valor])
+          : anios.map((a) => (valores.has(a) ? valores.get(a) : null)),
+        ...(conFechas ? { sampling: "lttb" } : {}),
         showSymbol: false,
         symbol: "circle",
         symbolSize: 8,
@@ -630,31 +693,43 @@
               .filter((p) => !vacia[p.seriesIndex])
               .map((p) => {
                 const s = cuerpo.series[p.seriesIndex];
+                const valor = Array.isArray(p.value) ? p.value[1] : p.value;
                 return (
                   `<div class="tt-fila"><span class="marca-serie serie-${slot(s)}"></span>` +
-                  `<span class="tt-nombre">${escapar(s.nombre)}</span><span class="tt-valor">${formatear(p.value)}</span></div>`
+                  `<span class="tt-nombre">${escapar(s.nombre)}</span><span class="tt-valor">${formatear(valor)}</span></div>`
                 );
               })
               .join("");
-            return `<div class="tt"><div class="tt-anio">${escapar(params[0].axisValue)}</div>${filas}</div>`;
+            const periodo = conFechas ? textoPeriodo(params[0].axisValue, frecuencia, true) : params[0].axisValue;
+            return `<div class="tt"><div class="tt-anio">${escapar(periodo)}</div>${filas}</div>`;
           },
         },
-        xAxis: {
-          type: "category",
-          data: anios.map(String),
-          boundaryGap: false,
-          axisLine: { lineStyle: { color: c.eje } },
-          axisTick: { show: false },
-          // Con etiquetas de fin de línea, los años de los extremos van hacia adentro para no pisarlas.
-          axisLabel: {
-            color: c.tinta3,
-            fontSize: 12,
-            hideOverlap: true,
-            ...(etiquetas ? { alignMinLabel: "left", alignMaxLabel: "right" } : {}),
-          },
-        },
+        xAxis: conFechas
+          ? {
+              type: "time",
+              axisLine: { lineStyle: { color: c.eje } },
+              axisTick: { show: false },
+              splitLine: { show: false },
+              axisLabel: { color: c.tinta3, fontSize: 12, hideOverlap: true, formatter: etiquetaEjeTiempo },
+            }
+          : {
+              type: "category",
+              data: anios.map(String),
+              boundaryGap: false,
+              axisLine: { lineStyle: { color: c.eje } },
+              axisTick: { show: false },
+              // Con etiquetas de fin de línea, los años de los extremos van hacia adentro para no pisarlas.
+              axisLabel: {
+                color: c.tinta3,
+                fontSize: 12,
+                hideOverlap: true,
+                ...(etiquetas ? { alignMinLabel: "left", alignMaxLabel: "right" } : {}),
+              },
+            },
         yAxis: {
           type: "value",
+          // En las series de Uruguay (cotizaciones, tasas) el eje se ajusta a los datos en vez de arrancar en 0.
+          scale: conFechas,
           axisLabel: { color: c.tinta3, fontSize: 12, formatter: formatoEje },
           splitLine: { lineStyle: { color: c.grilla } },
         },
@@ -675,6 +750,7 @@
             moveHandleStyle: { color: c.superficie2, borderColor: c.eje },
             emphasis: { handleStyle: { borderColor: c.acento }, moveHandleStyle: { color: c.eje } },
             textStyle: { color: c.tinta3, fontFamily: c.fuente, fontSize: 11 },
+            ...(conFechas ? { labelFormatter: (v) => textoPeriodo(v, frecuencia) } : {}),
             brushSelect: false,
           },
         ],
@@ -687,7 +763,8 @@
     const nombres = cuerpo.series.map((s) => s.nombre).join(", ");
     el.grafica.setAttribute(
       "aria-label",
-      `Gráfica de líneas: ${cuerpo.indicador.nombre} de ${nombres}, ${anios[0]} a ${anios[anios.length - 1]}. Los valores están en la tabla.`
+      `Gráfica de líneas: ${cuerpo.indicador.nombre} de ${nombres}, ${textoPeriodo(anios[0], frecuencia, true)} a ` +
+        `${textoPeriodo(anios[anios.length - 1], frecuencia, true)}. Los valores están en la tabla.`
     );
   }
 
@@ -729,7 +806,9 @@
   function pintarTabla(cuerpo, anios) {
     const thead = el.tabla.tHead;
     const tbody = el.tabla.tBodies[0];
-    const cabeza = ['<tr><th scope="col">Año</th>'];
+    const frecuencia = cuerpo.indicador.frecuencia;
+    const primera = { mensual: "Mes", diaria: "Fecha" }[frecuencia] || "Año";
+    const cabeza = [`<tr><th scope="col">${primera}</th>`];
     for (const s of cuerpo.series) {
       const motivo = motivoVacia(s, cuerpo);
       cabeza.push(
@@ -742,13 +821,13 @@
     cabeza.push("</tr>");
     thead.innerHTML = cabeza.join("");
 
-    const mapas = cuerpo.series.map((s) => new Map(s.datos.map((d) => [d.anio, d.valor])));
+    const mapas = cuerpo.series.map((s) => new Map(s.datos.map((d) => [clave(d), d.valor])));
     const filas = anios.map((a) => {
       const celdas = mapas.map((m) => {
         const v = m.get(a);
         return v == null ? '<td class="sin-dato">—</td>' : `<td>${formatear(v)}</td>`;
       });
-      return `<tr><th scope="row">${a}</th>${celdas.join("")}</tr>`;
+      return `<tr><th scope="row">${escapar(textoPeriodo(a, frecuencia))}</th>${celdas.join("")}</tr>`;
     });
     tbody.innerHTML = filas.join("");
     el.notaTabla.textContent = textoUnidad(cuerpo.indicador) + (cuerpo.base != null ? ` (${cuerpo.base} = 100)` : "") + ". «—»: sin dato.";
@@ -763,6 +842,7 @@
   leerUrl();
   el.indicador.value = estado.indicador;
   prepararFuentes();
+  prepararPaises();
   prepararAnios();
   pintarFichas();
 

@@ -3,9 +3,11 @@
 Se saltean si Playwright o su Chromium no están instalados (`pip install playwright && playwright install chromium`).
 """
 
+import re
 import secrets
 import threading
 import time
+from datetime import date
 
 import httpx
 import pytest
@@ -21,12 +23,14 @@ from app.auth.seguridad import hash_token, hashear_password  # noqa: E402
 from app.auth.sesiones import COOKIE_SESION, DURACION, ahora  # noqa: E402
 from app.db import Base, get_db  # noqa: E402
 from app.etl.banco_mundial import cargar_bm  # noqa: E402
+from app.etl.bcu import cargar_bcu  # noqa: E402
 from app.etl.fmi import cargar_fmi  # noqa: E402
+from app.etl.ine import cargar_ine  # noqa: E402
 from app.etl.semillas import cargar_semillas  # noqa: E402
 from app.main import app as aplicacion  # noqa: E402
 from app.models import Sesion, Usuario  # noqa: E402
 from tests.ayudas import PASSWORD  # noqa: E402
-from tests.conftest import transporte_bm, transporte_fmi  # noqa: E402
+from tests.conftest import transporte_bcu, transporte_bm, transporte_fmi, transporte_ine  # noqa: E402
 
 PUERTO = 8799
 BASE = f"http://127.0.0.1:{PUERTO}"
@@ -34,7 +38,7 @@ BASE = f"http://127.0.0.1:{PUERTO}"
 
 @pytest.fixture(scope="module")
 def servidor():
-    """App con los datos de los fixtures (FMI y BM), servida por uvicorn en un hilo. Devuelve el token de sesión."""
+    """App con los datos de los fixtures (FMI, BM, INE y BCU), servida por uvicorn en un hilo. Devuelve el token de sesión."""
     engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
     Base.metadata.create_all(engine)
     Hacer = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
@@ -44,6 +48,10 @@ def servidor():
             cargar_fmi(s, c, espera=0)
         with httpx.Client(transport=transporte_bm(), base_url="https://bm.test") as c:
             cargar_bm(s, c, espera=0)
+        with httpx.Client(transport=transporte_ine(), base_url="https://ine.test/documents") as c:
+            cargar_ine(s, c, espera=0)
+        with httpx.Client(transport=transporte_bcu(), base_url="https://bcu.test/servlet") as c:
+            cargar_bcu(s, c, espera=0, hasta=date(2026, 10, 18))
         usuario = Usuario(email="navegador@example.com", nombre="Navegador", password_hash=hashear_password(PASSWORD),
                           totp_activo=True, rol="usuario")
         s.add(usuario)
@@ -273,3 +281,89 @@ def test_marca_de_la_serie_vacia_es_hueca_y_alineada_con_el_nombre(pagina):
     centro_marca = m["y"] + m["height"] / 2
     centro_linea = nombre["y"] + nombre["height"] / 2
     assert abs(centro_marca - centro_linea) <= 2, (centro_marca, centro_linea)
+
+
+# --- Series de Uruguay (INE y BCU): una sola serie, eje de fechas ---
+
+def opcion_grafica(pg, js):
+    return pg.evaluate(f"() => {{ const o = echarts.getInstanceByDom(document.getElementById('grafica')).getOption(); return {js}; }}")
+
+
+def test_serie_mensual_de_uruguay_con_eje_de_fechas(pagina):
+    pagina.goto(f"{BASE}/?indicador=IPC_UY&desde=1937")
+    esperar_carga(pagina)
+    assert not pagina.locator("#estado").is_visible()
+    # En lugar del buscador de países, la serie fija de Uruguay.
+    assert pagina.locator("#serie-fija").is_visible() and not pagina.locator("#selector-paises").is_visible()
+    assert pagina.inner_text("#serie-fija") == "Uruguay"
+    assert pagina.inner_text("#etiqueta-paises") == "País"
+    assert "paises=" not in pagina.evaluate("() => performance.getEntriesByType('resource').filter((r) => r.name.includes('/api/series')).pop().name")
+    assert opcion_grafica(pagina, "o.xAxis[0].type") == "time"
+    assert opcion_grafica(pagina, "o.series.map((s) => [s.name, s.data.length])") == [["Uruguay", 10]]
+    assert pagina.inner_text("#fuente-serie") == "Fuente: Instituto Nacional de Estadística (INE)"
+    assert pagina.locator("#fuente option").all_inner_texts() == ["INE"]
+    # Tabla por mes: el IPC de 1937 (0,00000016 en base 2022) se ve con cifras significativas, no como 0,0.
+    assert pagina.locator("#tabla thead th").first.inner_text() == "Mes"
+    filas = pagina.locator("#tabla tbody tr").all_inner_texts()
+    assert len(filas) == 10
+    assert "1937" in filas[0] and "0,000000159" in filas[0]
+    assert any("2022" in f and "100,0" in f for f in filas)
+    assert "Unidades" not in pagina.inner_text("#unidad-serie")
+
+
+def test_serie_diaria_del_dolar(pagina):
+    pagina.goto(f"{BASE}/?indicador=DOLAR_INTERBANCARIO")
+    esperar_carga(pagina)
+    assert not pagina.locator("#estado").is_visible()
+    assert opcion_grafica(pagina, "o.xAxis[0].type") == "time"
+    assert pagina.locator("#tabla thead th").first.inner_text() == "Fecha"
+    filas = pagina.locator("#tabla tbody tr").all_inner_texts()
+    assert len(filas) == 11
+    # Con los 3 decimales que publica el BCU.
+    assert filas[0].startswith("01/10/2026") and "40,463" in filas[0]
+    assert filas[-1].startswith("16/10/2026") and "40,097" in filas[-1]
+    assert "Banco Central del Uruguay" in pagina.inner_text("#fuente-serie")
+    # El tooltip muestra la fecha, no el instante en milisegundos.
+    caja = pagina.locator("#grafica").bounding_box()
+    pagina.mouse.move(caja["x"] + caja["width"] * 0.5, caja["y"] + caja["height"] * 0.4)
+    pagina.wait_for_timeout(400)
+    tooltip = pagina.locator(".tooltip-grafica .tt-anio")
+    assert re.fullmatch(r"\d{2}/10/2026", tooltip.inner_text())
+
+
+def test_base_100_en_serie_de_uruguay(pagina):
+    pagina.goto(f"{BASE}/?indicador=IPC_UY&desde=2022&hasta=2026&base=2022")
+    esperar_carga(pagina)
+    assert not pagina.locator("#estado").is_visible()
+    assert "2022 = 100" in pagina.inner_text("#unidad-serie")
+    assert opcion_grafica(pagina, "o.series[0].markLine.data[0].yAxis") == 100
+
+
+def test_ida_y_vuelta_entre_internacional_y_uruguay(pagina):
+    pagina.goto(f"{BASE}/?indicador=PBI_USD_CORR&fuente=FMI_DM&paises=URY,ARG")
+    esperar_carga(pagina)
+    pagina.select_option("#indicador", "DESEMPLEO_UY")
+    esperar_carga(pagina)
+    assert pagina.locator("#serie-fija").is_visible() and not pagina.locator("#selector-paises").is_visible()
+    assert pagina.locator("#fuente").input_value() == "INE"
+    assert opcion_grafica(pagina, "o.series.length") == 1
+    assert rango(pagina) == ("2006", "2026")
+    pagina.select_option("#indicador", "PBI_USD_CORR")
+    esperar_carga(pagina)
+    # Vuelven el buscador y los países elegidos antes.
+    assert pagina.locator("#selector-paises").is_visible() and not pagina.locator("#serie-fija").is_visible()
+    assert pagina.locator("#fichas .ficha").count() == 2
+    assert opcion_grafica(pagina, "o.xAxis[0].type") == "category"
+    assert pagina.inner_text("#etiqueta-paises") == "Países y regiones"
+
+
+def test_390px_serie_diaria_sin_scroll_horizontal(servidor, navegador):
+    ctx = navegador.new_context(viewport={"width": 390, "height": 844})
+    ctx.add_cookies([{"name": COOKIE_SESION, "value": servidor, "url": BASE}])
+    pg = ctx.new_page()
+    try:
+        pg.goto(f"{BASE}/?indicador=DOLAR_INTERBANCARIO")
+        esperar_carga(pg)
+        assert pg.evaluate("() => document.documentElement.scrollWidth") <= 390
+    finally:
+        ctx.close()

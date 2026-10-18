@@ -120,12 +120,13 @@ def test_series_paises_vacio(con_datos):
     assert r.status_code == 422
 
 
-def test_series_indicador_nacional_da_400(con_datos, sesion_con_semillas):
+def test_series_alcance_y_frecuencia_sin_tabla_da_400(con_datos, sesion_con_semillas):
+    # Las series nacionales ya se pueden pedir (tests/test_api_nacional.py); las internacionales mensuales todavía no.
     from app.models import Indicador
 
-    sesion_con_semillas.add(Indicador(codigo="UY_IPC", nombre="IPC", unidad="Índice", alcance="nacional", frecuencia="mensual"))
+    sesion_con_semillas.add(Indicador(codigo="X_MENSUAL", nombre="X", unidad="Índice", alcance="internacional", frecuencia="mensual"))
     sesion_con_semillas.commit()
-    r = con_datos.get("/api/series", params={"indicador": "UY_IPC", "paises": "URY"})
+    r = con_datos.get("/api/series", params={"indicador": "X_MENSUAL", "paises": "URY"})
     assert r.status_code == 400
 
 

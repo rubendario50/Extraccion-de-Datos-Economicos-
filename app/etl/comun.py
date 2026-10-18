@@ -1,8 +1,11 @@
 """Funciones compartidas por los cargadores de cada fuente (FMI, Banco Mundial, ...)."""
 
 import logging
+import ssl
 import time
+from pathlib import Path
 
+import certifi
 import httpx
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -12,14 +15,26 @@ from app.models import Fuente, IndicadorSerieExterna, PaisCodigoExterno
 log = logging.getLogger(__name__)
 
 
-def obtener_json(cliente: httpx.Client, ruta: str, reintentos: int = 3, espera: float = 2.0):
-    """GET con reintentos simples ante errores de red o respuestas 5xx / 429."""
+def contexto_tls(*certificados: Path) -> ssl.SSLContext:
+    """Contexto TLS con las autoridades de certifi más certificados intermedios propios.
+
+    Algunos sitios del Estado uruguayo no envían completa la cadena de certificados; en lugar de
+    desactivar la verificación se agrega el intermedio que falta (guardado en app/etl/certificados/).
+    """
+    contexto = ssl.create_default_context(cafile=certifi.where())
+    for certificado in certificados:
+        contexto.load_verify_locations(cafile=str(certificado))
+    return contexto
+
+
+def pedir(cliente: httpx.Client, metodo: str, ruta: str, reintentos: int = 3, espera: float = 2.0, **opciones) -> httpx.Response:
+    """Pedido HTTP con reintentos simples ante errores de red o respuestas 5xx / 429."""
     for intento in range(1, reintentos + 1):
         try:
-            respuesta = cliente.get(ruta)
+            respuesta = cliente.request(metodo, ruta, **opciones)
             if respuesta.status_code < 500 and respuesta.status_code != 429:
                 respuesta.raise_for_status()
-                return respuesta.json()
+                return respuesta
             error: Exception = httpx.HTTPStatusError(
                 f"HTTP {respuesta.status_code}", request=respuesta.request, response=respuesta
             )
@@ -29,6 +44,16 @@ def obtener_json(cliente: httpx.Client, ruta: str, reintentos: int = 3, espera: 
         if intento < reintentos:
             time.sleep(espera * intento)
     raise error
+
+
+def obtener_json(cliente: httpx.Client, ruta: str, reintentos: int = 3, espera: float = 2.0):
+    """GET de un JSON, con reintentos (ver `pedir`)."""
+    return pedir(cliente, "GET", ruta, reintentos, espera).json()
+
+
+def obtener_bytes(cliente: httpx.Client, ruta: str, reintentos: int = 3, espera: float = 2.0) -> bytes:
+    """GET de un archivo (planilla, etc.), con reintentos (ver `pedir`)."""
+    return pedir(cliente, "GET", ruta, reintentos, espera).content
 
 
 def series_de_fuente(

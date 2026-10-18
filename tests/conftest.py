@@ -116,3 +116,73 @@ def cliente_api(cliente_web, sesion_con_semillas):
     """Cliente con una sesión completa (contraseña y doble factor)."""
     entrar_directo(cliente_web, sesion_con_semillas)
     return cliente_web
+
+
+# Planilla del INE (último tramo de la ruta) -> archivo real recortado en tests/fixtures.
+PLANILLAS_INE = {
+    "IPC gral y variaciones_base 2022.xlsx": "ine_ipc_general.xlsx",
+    "ECH0013.xlsx": "ine_ECH0013.xlsx",
+}
+
+
+def transporte_ine(llamadas: list | None = None, planillas: dict[str, bytes] | None = None) -> httpx.MockTransport:
+    """Simula www5.ine.gub.uy con las planillas recortadas de tests/fixtures (o con `planillas`, si se pasa)."""
+
+    def responder(pedido: httpx.Request) -> httpx.Response:
+        if llamadas is not None:
+            llamadas.append(pedido.url.path)
+        nombre = pedido.url.path.rsplit("/", 1)[-1]
+        if planillas is not None and nombre in planillas:
+            return httpx.Response(200, content=planillas[nombre])
+        if nombre not in PLANILLAS_INE:
+            return httpx.Response(404, text="404 - File or directory not found.")
+        return httpx.Response(200, content=(FIXTURES / PLANILLAS_INE[nombre]).read_bytes())
+
+    return httpx.MockTransport(responder)
+
+
+@pytest.fixture
+def cliente_ine():
+    with httpx.Client(transport=transporte_ine(), base_url="https://ine.test/documents") as c:
+        yield c
+
+
+def transporte_bcu(llamadas: list | None = None) -> httpx.MockTransport:
+    """Simula el servicio de cotizaciones del BCU con respuestas reales guardadas en tests/fixtures.
+
+    Solo hay datos de 2225 (dólar billete) del 1 al 16 de octubre de 2026 (bcu_2225_2026-10.xml): responde
+    los de ese archivo que caen en el rango pedido; sin ninguno, "No existe cotización" (código 100); y
+    con más de 366 días, el error 104, como el servicio real.
+    """
+    import re
+    import xml.etree.ElementTree as ET
+    from datetime import date
+
+    ET.register_namespace("SOAP-ENV", "http://schemas.xmlsoap.org/soap/envelope/")
+
+    def responder(pedido: httpx.Request) -> httpx.Response:
+        cuerpo = pedido.content.decode()
+        desde = date.fromisoformat(re.search(r"<cot:FechaDesde>([^<]+)<", cuerpo).group(1))
+        hasta = date.fromisoformat(re.search(r"<cot:FechaHasta>([^<]+)<", cuerpo).group(1))
+        moneda = re.search(r"<cot:item>(\d+)<", cuerpo).group(1)
+        if llamadas is not None:
+            llamadas.append((moneda, desde, hasta))
+        if (hasta - desde).days > 365:
+            return httpx.Response(200, content=(FIXTURES / "bcu_rango_excedido.xml").read_bytes())
+        raiz = ET.fromstring((FIXTURES / "bcu_2225_2026-10.xml").read_bytes())
+        lista = raiz.find(".//{Cotiza}datoscotizaciones")
+        for dato in list(lista):
+            fecha = date.fromisoformat(dato.findtext("{Cotiza}Fecha"))
+            if moneda != "2225" or not desde <= fecha <= hasta:
+                lista.remove(dato)
+        if not len(lista):
+            return httpx.Response(200, content=(FIXTURES / "bcu_sin_cotizaciones.xml").read_bytes())
+        return httpx.Response(200, content=ET.tostring(raiz, encoding="utf-8"))
+
+    return httpx.MockTransport(responder)
+
+
+@pytest.fixture
+def cliente_bcu():
+    with httpx.Client(transport=transporte_bcu(), base_url="https://bcu.test/servlet") as c:
+        yield c

@@ -11,11 +11,13 @@ Plataforma de recopilación, análisis y difusión de datos económicos internac
 
 ## Estado
 
-Versión actual: 0.2.1 (ver `CHANGELOG.md`).
+Versión actual: 0.2.2 (ver `CHANGELOG.md`).
 
 Desde la 0.1: base de datos PostgreSQL en Podman, tabla maestra de países (`data/seed/paises.csv`), carga del PBI del FMI DataMapper (PBI en dólares corrientes y crecimiento real) y una web con login (contraseña o Google, doble factor obligatorio) donde se eligen indicador, países y años y se ven la gráfica y la tabla, con opción de índice base 100. La arquitectura está en `docs/arquitectura.md`.
 
 Desde la 0.2: más indicadores internacionales anuales del FMI (deuda bruta y resultado fiscal del gobierno general, población) y del Banco Mundial (PBI, crecimiento, población, exportaciones, importaciones y deuda del gobierno central). Cuando un mismo dato viene de las dos fuentes se guardan ambas cifras por separado, y el panel y la API dejan elegir la fuente.
+
+Desde la 0.2.2, primeros datos de Uruguay: IPC mensual (INE, desde 1937), tasa de desempleo mensual (INE, Encuesta Continua de Hogares, desde 2006) y dólar interbancario billete diario (BCU, cierre del día, desde 2000). En el panel aparecen en el grupo "Uruguay" del selector de indicadores, con una sola serie y eje de fechas.
 
 ## Levantar el proyecto con Podman
 
@@ -64,10 +66,10 @@ python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().d
 
 ### Cargar los datos
 
-Al arrancar, el contenedor `app` aplica las migraciones de Alembic. Después hay que cargar las semillas (países, fuentes, indicadores) y los datos del FMI y del Banco Mundial (los comandos son iguales en Linux y Windows):
+Al arrancar, el contenedor `app` aplica las migraciones de Alembic. Después hay que cargar las semillas (países, fuentes, indicadores) y los datos del FMI, del Banco Mundial, del INE y del BCU (los comandos son iguales en Linux y Windows):
 
 ```bash
-podman-compose exec app python -m app.etl todo                      # semillas + FMI + Banco Mundial
+podman-compose exec app python -m app.etl todo                      # semillas + FMI + Banco Mundial + INE + BCU
 
 # o por partes:
 podman-compose exec app python -m app.etl semillas
@@ -75,11 +77,19 @@ podman-compose exec app python -m app.etl fmi                       # todos los 
 podman-compose exec app python -m app.etl fmi --indicadores NGDPD   # solo algunos
 podman-compose exec app python -m app.etl bm                        # todos los indicadores del Banco Mundial
 podman-compose exec app python -m app.etl bm --indicadores NY.GDP.MKTP.CD,SP.POP.TOTL
+podman-compose exec app python -m app.etl ine                       # IPC y desempleo (planillas del INE)
+podman-compose exec app python -m app.etl ine --indicadores ECH0013 # solo el desempleo
+podman-compose exec app python -m app.etl bcu                       # dólar interbancario (servicio web del BCU)
+podman-compose exec app python -m app.etl bcu --desde 2000-01-01    # volver a bajar toda la serie
 ```
+
+La primera carga del BCU baja la serie desde 2000 (un pedido por año, porque el servicio acepta hasta 366 días por pedido); las siguientes retoman 10 días antes de la última cotización guardada. El INE se baja entero cada vez (las planillas son chicas y el INE revisa cifras pasadas).
 
 Los códigos de país que la fuente publica y no están en `paises.csv` se avisan en el registro (`WARNING ... sin mapear`). Los agregados del Banco Mundial sin equivalente en el FMI (regiones propias del BM, grupos de ingreso) se omiten.
 
 Las cargas son idempotentes: se pueden repetir para actualizar los valores sin duplicarlos.
+
+Si una fuente falla (sin conexión, respuesta vacía, planilla con otro formato), se muestra `Error (FUENTE): ...` y no se guarda nada de esa fuente. En `todo` se sigue con las demás, al final se listan las que fallaron y el comando sale con código 1.
 
 Comprobar que funciona:
 
@@ -99,19 +109,19 @@ podman-compose up -d --build     # reconstruir la imagen después de cambiar el 
 
 Toda la API exige una sesión iniciada con el doble factor completo (la cookie del navegador); sin ella responde 401. No hay `/docs` ni `/openapi.json` públicos porque el sistema es cerrado.
 
-`GET /api/series` devuelve series internacionales anuales. Parámetros:
+`GET /api/series` devuelve series internacionales anuales (por país) y series de Uruguay (anuales, mensuales o diarias). Parámetros:
 
 | Parámetro | Obligatorio | Descripción |
 |---|---|---|
-| `indicador` | sí | Código interno: `PBI_USD_CORR`, `PBI_CRECIMIENTO`, `POBLACION`, `DEUDA_GOB_GENERAL`, `RESULTADO_FISCAL`, `EXPORTACIONES_USD`, `IMPORTACIONES_USD`, `DEUDA_GOB_CENTRAL`. |
-| `paises` | sí | Códigos ISO3 o del FMI DataMapper separados por coma (`URY,ARG,WEOWORLD`). No distingue mayúsculas; los repetidos se ignoran. Hasta 8. |
-| `desde`, `hasta` | no | Primer y último año (inclusive). |
-| `base` | no | Año base: las series se expresan en índice base 100. |
-| `fuente` | no | `FMI_DM` o `BM`. Por defecto, la primera fuente con datos para ese indicador (el FMI antes que el Banco Mundial). |
+| `indicador` | sí | Código interno. Internacionales: `PBI_USD_CORR`, `PBI_CRECIMIENTO`, `POBLACION`, `DEUDA_GOB_GENERAL`, `RESULTADO_FISCAL`, `EXPORTACIONES_USD`, `IMPORTACIONES_USD`, `DEUDA_GOB_CENTRAL`. De Uruguay: `IPC_UY`, `DESEMPLEO_UY` (mensuales), `DOLAR_INTERBANCARIO` (diaria). |
+| `paises` | en los internacionales | Códigos ISO3 o del FMI DataMapper separados por coma (`URY,ARG,WEOWORLD`). No distingue mayúsculas; los repetidos se ignoran. Hasta 8. En los indicadores de Uruguay se omite (o solo `URY`). |
+| `desde`, `hasta` | no | Primer y último año (inclusive), también en las series mensuales y diarias. |
+| `base` | no | Año base: las series se expresan en índice base 100. En las mensuales y diarias vale 100 el promedio del año base. |
+| `fuente` | no | `FMI_DM`, `BM`, `INE` o `BCU`. Por defecto, la primera fuente con datos para ese indicador (el FMI antes que el Banco Mundial). |
 
 Las fuentes nunca se mezclan: todas las series de una respuesta salen de la misma fuente, aunque el indicador tenga datos de las dos. Las cifras de ambas están en la misma unidad y escala (por ejemplo, el PBI en miles de millones de dólares y la población en millones).
 
-Respuesta: `{"indicador": {codigo, nombre, unidad, escala}, "fuente", "fuente_nombre", "fuentes", "base", "series": [{"pais", "codigo", "nombre", "fuente", "datos": [{"anio", "valor"}]}]}`, donde `fuentes` lista las fuentes que publican el indicador. Errores: 404 (indicador, fuente o país desconocido, o fuente que no publica ese indicador), 400 (más de 8 países), 422 (parámetros inválidos o año base sin dato), con el motivo en `detail`.
+Respuesta: `{"indicador": {codigo, nombre, unidad, escala, alcance, frecuencia}, "fuente", "fuente_nombre", "fuentes", "base", "series": [{"pais", "codigo", "nombre", "fuente", "datos": [{"anio", "valor"}]}]}`, donde `fuentes` lista las fuentes que publican el indicador. En las series mensuales y diarias cada dato trae `fecha` (ISO, `"2024-03-01"`; en las mensuales, el primer día del mes) en lugar de `anio`, y hay una sola serie, `"pais": "URY"`. Ejemplo: `/api/series?indicador=DOLAR_INTERBANCARIO&desde=2024`. Errores: 404 (indicador, fuente o país desconocido, o fuente que no publica ese indicador), 400 (más de 8 países, u otro país en un indicador de Uruguay), 422 (parámetros inválidos o año base sin dato), con el motivo en `detail`.
 
 ## Acceso y seguridad
 
@@ -139,7 +149,7 @@ Si el email de Google ya tiene una cuenta con contraseña, se vinculan las dos (
 
 ## Correr los tests en local
 
-Los tests usan SQLite en memoria, respuestas de ejemplo del FMI y del Banco Mundial (`tests/fixtures/`) y un Google simulado: no necesitan Podman, PostgreSQL ni internet. Requieren Python 3.12 o superior.
+Los tests usan SQLite en memoria, respuestas de ejemplo del FMI, del Banco Mundial, del INE (planillas reales recortadas) y del BCU (`tests/fixtures/`) y un Google simulado: no necesitan Podman, PostgreSQL ni internet. Requieren Python 3.12 o superior.
 
 Linux Mint:
 
@@ -160,6 +170,8 @@ py -m venv .venv
 ## Agregar un indicador
 
 Agregar una fila en `data/seed/indicadores.csv` con el código interno, sus datos, la fuente (`FMI_DM` o `BM`) y el código en esa fuente (por ejemplo `LP` en el FMI o `SP.POP.TOTL` en el Banco Mundial), y volver a correr `python -m app.etl semillas` y `python -m app.etl fmi` o `bm`.
+
+En el BCU el código es el de la moneda en su servicio de cotizaciones (por ejemplo `2230`, promedio del dólar fondo; la lista sale de `awsbcumonedas`), y alcanza con la fila del CSV. En el INE cada planilla tiene su propio formato: además de la fila hay que agregar en `app/etl/ine.py` la ruta del archivo y una función que lo lea (`ARCHIVOS`).
 
 Si es el mismo dato en las dos fuentes, se repite el código interno en dos filas, una por fuente; el nombre, la unidad y la escala salen de la primera. Si una fuente lo publica en otra escala, la columna `factor` convierte su valor a la del indicador: por ejemplo `1e-9` para pasar los dólares del Banco Mundial a miles de millones, o `1e-6` para pasar personas a millones.
 

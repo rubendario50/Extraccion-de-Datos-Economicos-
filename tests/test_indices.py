@@ -1,6 +1,6 @@
 import pytest
 
-from app.analisis.indices import ErrorIndice, a_base_100
+from app.analisis.indices import ErrorIndice, a_base_100, a_base_100_promedio
 
 
 def test_convierte_a_base_100():
@@ -29,3 +29,27 @@ def test_anio_base_con_valor_nulo():
 def test_anio_base_con_valor_cero():
     with pytest.raises(ErrorIndice, match="es 0"):
         a_base_100({2010: 0.0, 2011: 1.0}, 2010)
+
+
+# --- Series mensuales o diarias: el promedio del año base vale 100 ---
+
+def test_base_100_promedio_del_anio():
+    from datetime import date
+
+    serie = {date(2009, 12, 1): 45.0, date(2010, 1, 1): 40.0, date(2010, 2, 1): 60.0, date(2011, 1, 1): None}
+    resultado = a_base_100_promedio(serie, 2010)  # promedio de 2010: 50
+    assert resultado == {date(2009, 12, 1): 90.0, date(2010, 1, 1): 80.0, date(2010, 2, 1): 120.0, date(2011, 1, 1): None}
+
+
+def test_base_100_promedio_sin_datos_en_el_anio():
+    from datetime import date
+
+    with pytest.raises(ErrorIndice, match="año base 2015"):
+        a_base_100_promedio({date(2010, 1, 1): 1.0, date(2015, 3, 1): None}, 2015)
+
+
+def test_base_100_promedio_cero():
+    from datetime import date
+
+    with pytest.raises(ErrorIndice, match="es 0"):
+        a_base_100_promedio({date(2010, 1, 1): 1.0, date(2010, 2, 1): -1.0}, 2010)
