@@ -304,7 +304,7 @@ def test_serie_mensual_de_uruguay_con_eje_de_fechas(pagina):
     assert pagina.locator("#fuente option").all_inner_texts() == ["INE"]
     # Tabla por mes: el IPC de 1937 (0,00000016 en base 2022) se ve con cifras significativas, no como 0,0.
     assert pagina.locator("#tabla thead th").first.inner_text() == "Mes"
-    filas = pagina.locator("#tabla tbody tr").all_inner_texts()
+    filas = pagina.locator("#tabla tbody tr:not(.fila-grupo)").all_inner_texts()
     assert len(filas) == 10
     assert "1937" in filas[0] and "0,000000159" in filas[0]
     assert any("2022" in f and "100,0" in f for f in filas)
@@ -317,7 +317,7 @@ def test_serie_diaria_del_dolar(pagina):
     assert not pagina.locator("#estado").is_visible()
     assert opcion_grafica(pagina, "o.xAxis[0].type") == "time"
     assert pagina.locator("#tabla thead th").first.inner_text() == "Fecha"
-    filas = pagina.locator("#tabla tbody tr").all_inner_texts()
+    filas = pagina.locator("#tabla tbody tr:not(.fila-grupo)").all_inner_texts()
     assert len(filas) == 11
     # Con los 3 decimales que publica el BCU.
     assert filas[0].startswith("01/10/2026") and "40,463" in filas[0]
@@ -367,3 +367,45 @@ def test_390px_serie_diaria_sin_scroll_horizontal(servidor, navegador):
         assert pg.evaluate("() => document.documentElement.scrollWidth") <= 390
     finally:
         ctx.close()
+
+
+def test_tabla_de_serie_mensual_agrupada_por_anio_con_el_anio_fijo(pagina):
+    pagina.goto(f"{BASE}/?indicador=IPC_UY&desde=1937")
+    esperar_carga(pagina)
+    datos = pagina.locator("#tabla tbody tr:not(.fila-grupo) th").all_inner_texts()
+    anios = sorted({re.search(r"\d{4}", d).group(0) for d in datos})
+    # Un <tbody> por año, encabezado por una fila con el año (scope="rowgroup"), sin perder filas.
+    grupos = pagina.locator("#tabla tbody .fila-grupo th[scope=rowgroup]")
+    assert grupos.all_inner_texts() == anios
+    assert pagina.locator("#tabla tbody").count() == len(anios)
+    for tb in pagina.locator("#tabla tbody").all():
+        anio = tb.locator(".fila-grupo th").inner_text()
+        assert all(anio in t for t in tb.locator("tr:not(.fila-grupo) th").all_inner_texts())
+    # El año queda fijo justo debajo del encabezado al desplazar la tabla.
+    alto_cabeza = pagina.locator("#tabla thead").evaluate("e => e.offsetHeight")
+    estilo = grupos.first.evaluate("e => [getComputedStyle(e).position, getComputedStyle(e).top]")
+    assert estilo == ["sticky", f"{alto_cabeza}px"]
+    # Cifras significativas con ceros finales: la columna se lee pareja.
+    assert all(re.fullmatch(r"\d+,\d+", v) for v in pagina.locator("#tabla tbody td").all_inner_texts())
+
+
+def test_series_anuales_sin_grupos_por_anio(pagina):
+    pagina.goto(f"{BASE}/?indicador=PBI_USD_CORR&fuente=FMI_DM&paises=URY,ARG")
+    esperar_carga(pagina)
+    assert pagina.locator("#tabla .fila-grupo").count() == 0
+    assert pagina.locator("#tabla tbody").count() == 1
+
+
+def test_serie_de_uruguay_sin_leyenda_ni_etiqueta_final(pagina):
+    pagina.goto(f"{BASE}/?indicador=DESEMPLEO_UY")
+    esperar_carga(pagina)
+    # Una sola serie fija: ocultarla con la leyenda dejaría la gráfica vacía, y el nombre ya está en el control.
+    assert pagina.locator("#leyenda li").count() == 0 and not pagina.locator("#leyenda").is_visible()
+    assert opcion_grafica(pagina, "o.series[0].endLabel.show") is False
+    # Fuente única: se muestra como dato fijo y sin la ayuda de "las fuentes no se mezclan".
+    assert pagina.locator("#fuente").is_disabled()
+    assert not pagina.locator("#ayuda-fuente").is_visible()
+    pagina.select_option("#indicador", "PBI_USD_CORR")
+    esperar_carga(pagina)
+    assert pagina.locator("#leyenda button.leyenda-item").count() >= 1
+    assert pagina.locator("#ayuda-fuente").is_visible()

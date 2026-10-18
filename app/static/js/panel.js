@@ -13,6 +13,7 @@
     filtros: $("filtros"),
     indicador: $("indicador"),
     fuente: $("fuente"),
+    ayudaFuente: $("ayuda-fuente"),
     nombreFuente: $("fuente-serie"),
     selector: $("selector-paises"),
     serieFija: $("serie-fija"),
@@ -38,6 +39,7 @@
     reintentar: $("reintentar"),
     notaTabla: $("nota-tabla"),
     tabla: $("tabla"),
+    marcoTabla: document.querySelector(".tabla-marco"),
   };
 
   // ---------- Formato de números ----------
@@ -54,7 +56,8 @@
   }
 
   // Valores muy chicos (el IPC de los años 40 vale 0,0000002 en base 2022) con cifras significativas.
-  const fmtChico = new Intl.NumberFormat("es-UY", { maximumSignificantDigits: 3 });
+  // Siempre 3 cifras (0,00680 y no 0,0068) para que la columna se lea pareja.
+  const fmtChico = new Intl.NumberFormat("es-UY", { minimumSignificantDigits: 3, maximumSignificantDigits: 3 });
   const formatear = (v) => (v == null ? "—" : v !== 0 && Math.abs(v) < 0.01 ? fmtChico.format(v) : fmtValor.format(v));
 
   // ---------- Fechas (series mensuales y diarias de Uruguay) ----------
@@ -134,7 +137,7 @@
     el.selector.hidden = nacional;
     el.serieFija.hidden = !nacional;
     el.etiquetaPaises.textContent = nacional ? "País" : "Países y regiones";
-    el.ayudaPaises.textContent = nacional ? "Serie de Uruguay." : `Hasta ${MAX_SERIES} a la vez.`;
+    el.ayudaPaises.textContent = nacional ? "Los indicadores de Uruguay tienen una sola serie." : `Hasta ${MAX_SERIES} a la vez.`;
     if (nacional) cerrarOpciones();
   }
 
@@ -153,6 +156,7 @@
     if (!ind || !ind.fuentes.length) {
       estado.fuente = null;
       el.fuente.disabled = true;
+      el.ayudaFuente.hidden = true;
       return;
     }
     if (!ind.fuentes.some((f) => f.codigo === estado.fuente)) estado.fuente = ind.fuente || ind.fuentes[0].codigo;
@@ -167,6 +171,8 @@
       el.fuente.append(o);
     }
     el.fuente.disabled = ind.fuentes.length < 2;
+    // Con una sola fuente no hay nada que elegir ni que mezclar.
+    el.ayudaFuente.hidden = ind.fuentes.length < 2;
     el.nombreFuente.textContent = `Fuente: ${fuenteActual().nombre}`;
   }
 
@@ -429,9 +435,15 @@
     el.marco.removeAttribute("aria-busy");
   }
 
+  // Reemplaza el cuerpo de la tabla (las series mensuales y diarias usan un <tbody> por año).
+  function ponerCuerpo(html) {
+    [...el.tabla.tBodies].forEach((tb) => tb.remove());
+    el.tabla.insertAdjacentHTML("beforeend", html);
+  }
+
   function vaciarTabla(mensaje) {
     el.tabla.tHead.replaceChildren();
-    el.tabla.tBodies[0].innerHTML = `<tr><td class="tabla-vacia">${escapar(mensaje)}</td></tr>`;
+    ponerCuerpo(`<tbody><tr><td class="tabla-vacia">${escapar(mensaje)}</td></tr></tbody>`);
     el.notaTabla.textContent = "";
   }
 
@@ -585,7 +597,9 @@
     if (!conDatos.length) {
       if (grafica) grafica.clear();
       const otras = (porCodigoIndicador.get(cuerpo.indicador.codigo)?.fuentes.length || 0) > 1;
-      if (sinFuente.length === series.length) {
+      if (sinFuente.length === series.length && esNacional()) {
+        mostrarEstado("vacio", "Todavía no hay datos de esta serie", `Todavía no se cargaron datos de ${cuerpo.indicador.nombre}.`);
+      } else if (sinFuente.length === series.length) {
         mostrarEstado(
           "vacio",
           "Sin datos en esta fuente",
@@ -617,7 +631,9 @@
     const vacia = cuerpo.series.map((s) => !tieneDatos(s));
     const pocas = vacia.filter((v) => !v).length <= 4;
     const angosto = el.grafica.clientWidth < 560;
-    const etiquetas = pocas && !angosto;
+    // Uruguay es una sola serie fija: ni etiqueta al final de la línea ni leyenda (ya la nombra el control).
+    const nacional = esNacional();
+    const etiquetas = pocas && !angosto && !nacional;
     const slot = (s) => ranuras.get(s.pais) || 1;
     const quieto = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     // Series mensuales y diarias: eje de tiempo con pares [fecha, valor]; las anuales siguen con años.
@@ -759,7 +775,8 @@
       { notMerge: true }
     );
 
-    pintarLeyenda(cuerpo);
+    if (nacional) el.leyenda.replaceChildren();
+    else pintarLeyenda(cuerpo);
     const nombres = cuerpo.series.map((s) => s.nombre).join(", ");
     el.grafica.setAttribute(
       "aria-label",
@@ -805,7 +822,6 @@
 
   function pintarTabla(cuerpo, anios) {
     const thead = el.tabla.tHead;
-    const tbody = el.tabla.tBodies[0];
     const frecuencia = cuerpo.indicador.frecuencia;
     const primera = { mensual: "Mes", diaria: "Fecha" }[frecuencia] || "Año";
     const cabeza = [`<tr><th scope="col">${primera}</th>`];
@@ -822,15 +838,38 @@
     thead.innerHTML = cabeza.join("");
 
     const mapas = cuerpo.series.map((s) => new Map(s.datos.map((d) => [clave(d), d.valor])));
-    const filas = anios.map((a) => {
+    const fila = (a) => {
       const celdas = mapas.map((m) => {
         const v = m.get(a);
         return v == null ? '<td class="sin-dato">—</td>' : `<td>${formatear(v)}</td>`;
       });
       return `<tr><th scope="row">${escapar(textoPeriodo(a, frecuencia))}</th>${celdas.join("")}</tr>`;
-    });
-    tbody.innerHTML = filas.join("");
+    };
+    if (frecuencia === "mensual" || frecuencia === "diaria") {
+      // Series largas (miles de cotizaciones): un grupo por año con su año fijo arriba al desplazarse.
+      const grupos = [];
+      for (const a of anios) {
+        const anio = String(a).slice(0, 4);
+        if (!grupos.length || grupos[grupos.length - 1].anio !== anio) grupos.push({ anio, filas: [] });
+        grupos[grupos.length - 1].filas.push(fila(a));
+      }
+      ponerCuerpo(
+        grupos
+          .map((g) =>
+            `<tbody><tr class="fila-grupo"><th scope="rowgroup" colspan="${cuerpo.series.length + 1}">${g.anio}</th></tr>` +
+            `${g.filas.join("")}</tbody>`)
+          .join("")
+      );
+    } else {
+      ponerCuerpo(`<tbody>${anios.map(fila).join("")}</tbody>`);
+    }
+    medirCabeza();
     el.notaTabla.textContent = textoUnidad(cuerpo.indicador) + (cuerpo.base != null ? ` (${cuerpo.base} = 100)` : "") + ". «—»: sin dato.";
+  }
+
+  // La fila del año queda fija justo debajo del encabezado, que puede ocupar una o varias líneas.
+  function medirCabeza() {
+    el.marcoTabla.style.setProperty("--alto-cabeza", `${el.tabla.tHead.offsetHeight}px`);
   }
 
   // ---------- Arranque ----------
@@ -848,6 +887,7 @@
 
   window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", alCambiarTema);
   new ResizeObserver(() => grafica && grafica.resize()).observe(el.grafica);
+  new ResizeObserver(medirCabeza).observe(el.tabla.tHead);
   // Esperar la fuente para que el canvas no dibuje con la de reserva.
   (document.fonts ? document.fonts.ready : Promise.resolve()).then(cargar);
 })();

@@ -1,13 +1,50 @@
 {% extends "base.html" %}
 {% block clase_body %}pagina-acceso{% endblock %}
 {% block cuerpo %}
-<main id="contenido" class="acceso">
+<main id="contenido" class="acceso{% if portada %} acceso-con-portada{% endif %}">
   <div class="acceso-marca">
     <span class="marca">Datos Económicos</span>
-    <p class="acceso-lema">Series del FMI y del Banco Mundial para comparar países, años e índices.</p>
+    <p class="acceso-lema">Series del FMI y del Banco Mundial, y de Uruguay del INE y el BCU, para comparar países, años e índices.</p>
   </div>
   <div class="acceso-hoja">
     {% block hoja %}{% endblock %}
   </div>
+  {% if portada %}
+  {# Muestra real de lo que hay adentro: sale de la base al armar la página, sin pedidos a la API. #}
+  <section class="acceso-portada" aria-labelledby="titulo-portada">
+    <h2 class="oculto-visual" id="titulo-portada">Qué datos hay</h2>
+    {% set m = portada.muestra %}
+    {% if m %}
+    <figure class="muestra">
+      <figcaption class="muestra-titulo">PBI en dólares corrientes, índice {{ m.base }} = 100</figcaption>
+      <svg class="muestra-grafica" viewBox="0 0 {{ m.ancho }} {{ m.alto }}" preserveAspectRatio="none"
+           role="img" aria-label="{{ m.descripcion }}" focusable="false">
+        <line class="muestra-base" x1="0" x2="{{ m.ancho }}" y1="{{ m.y_base }}" y2="{{ m.y_base }}" vector-effect="non-scaling-stroke"/>
+        {% for s in m.series %}
+        <polyline class="muestra-linea serie-{{ s.ranura }}" points="{{ s.trazo }}" vector-effect="non-scaling-stroke"/>
+        {% endfor %}
+      </svg>
+      <div class="muestra-eje" aria-hidden="true"><span>{{ m.desde }}</span><span>{{ m.hasta }}</span></div>
+      <ul class="muestra-leyenda" aria-label="Valor en {{ m.hasta }}">
+        {% for s in m.series %}
+        <li class="serie-{{ s.ranura }}"><span class="leyenda-linea" aria-hidden="true"></span>{{ s.nombre }} <strong>{{ s.final_texto }}</strong></li>
+        {% endfor %}
+      </ul>
+      <p class="muestra-nota">Fuente: FMI. Valores de {{ m.hasta }}; {{ m.base }} = 100.</p>
+    </figure>
+    {% endif %}
+    <dl class="cobertura">
+      {% for f in portada.fuentes %}
+      <div class="cobertura-fila">
+        <dt><abbr title="{{ f.nombre }}">{{ f.corto }}</abbr></dt>
+        <dd><span class="cobertura-anios">{{ f.desde }}–{{ f.hasta }}</span> {{ f.que }}</dd>
+      </div>
+      {% endfor %}
+    </dl>
+    {% if portada.paises %}
+    <p class="cobertura-paises">{{ portada.paises }} países{% if portada.regiones %} y {{ portada.regiones }} regiones{% endif %} para comparar, hasta ocho por gráfica.</p>
+    {% endif %}
+  </section>
+  {% endif %}
 </main>
 {% endblock %}

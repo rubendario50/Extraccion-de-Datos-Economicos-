@@ -139,4 +139,45 @@ def test_paginas_sin_scripts_en_linea(cliente_api):
 
 def test_lema_de_acceso_menciona_las_fuentes_reales(cliente_web):
     html = cliente_web.get("/login").text
-    assert "Series del FMI y del Banco Mundial" in html and "de Uruguay para" not in html
+    assert "Series del FMI y del Banco Mundial, y de Uruguay del INE y el BCU" in html
+
+
+def test_portada_sin_datos_muestra_solo_el_lema(cliente_web):
+    html = cliente_web.get("/login").text
+    assert "acceso-portada" not in html and "acceso-con-portada" not in html
+
+
+def test_portada_con_muestra_real_y_cobertura(cliente_web, sesion_con_semillas, cliente_fmi):
+    cargar_fmi(sesion_con_semillas, cliente_fmi, espera=0)
+    for ruta in ("/login", "/registro"):
+        html = cliente_web.get(ruta).text
+        assert 'class="acceso-portada"' in html
+        # Índice base 100 calculado con los datos guardados (fixture: URY 24,892 en 2000 y 82,323 en 2024).
+        assert "PBI en dólares corrientes, índice 2000 = 100" in html
+        assert re.search(r"Uruguay <strong>331</strong>", html) and re.search(r"Argentina <strong>201</strong>", html)
+        assert html.count('class="muestra-linea') == 2
+        assert re.search(r"<abbr[^>]*>FMI</abbr>", html) and "1980–2024" in html
+        assert " style=" not in html and "<style" not in html
+    # Con error en el formulario, la portada sigue.
+    r = cliente_web.post("/login", data={"email": "x@example.com", "password": "mal", "csrf": csrf_de(html)})
+    assert r.status_code == 400 and 'class="acceso-portada"' in r.text
+
+
+def test_portada_no_va_en_las_pantallas_del_doble_factor(cliente_web, sesion_con_semillas, cliente_fmi):
+    cargar_fmi(sesion_con_semillas, cliente_fmi, espera=0)
+    registrar(cliente_web)
+    assert "acceso-portada" not in cliente_web.get("/2fa/configurar").text
+
+
+def test_datos_portada_hasta_el_ultimo_anio_cerrado(sesion_con_semillas, cliente_fmi):
+    from datetime import date
+
+    from app.web.portada import datos_portada
+
+    cargar_fmi(sesion_con_semillas, cliente_fmi, espera=0)
+    # En 2011 el último año cerrado es 2010: no entran los valores de 2024 (proyecciones, para esa fecha).
+    m = datos_portada(sesion_con_semillas, hoy=date(2011, 6, 1))["muestra"]
+    assert m["hasta"] == 2010 and [s["anio_final"] for s in m["series"]] == [2010, 2010]
+    # Sin el año base no hay muestra, pero sí la cobertura.
+    p = datos_portada(sesion_con_semillas, hoy=date(2000, 6, 1))
+    assert p["muestra"] is None and p["fuentes"][0]["corto"] == "FMI"

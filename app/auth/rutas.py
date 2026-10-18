@@ -13,6 +13,7 @@ from app.auth.sesiones import borrar_cookie, cerrar_sesion, completar_mfa, crear
 from app.db import get_db
 from app.models import Sesion
 from app.web.plantillas import renderizar
+from app.web.portada import datos_portada
 
 router = APIRouter()
 
@@ -38,10 +39,12 @@ def _segun_sesion(sesion: Sesion | None) -> RedirectResponse | None:
 # --- Login ---
 
 @router.get("/login")
-def ver_login(request: Request, aviso: str = "", sesion: Sesion | None = Depends(sesion_actual)):
+def ver_login(
+    request: Request, aviso: str = "", sesion: Sesion | None = Depends(sesion_actual), db: Session = Depends(get_db)
+):
     if (r := _segun_sesion(sesion)) is not None:
         return r
-    return renderizar(request, "login.html", {"aviso": AVISOS.get(aviso), "email": ""})
+    return renderizar(request, "login.html", {"aviso": AVISOS.get(aviso), "email": "", "portada": datos_portada(db)})
 
 
 @router.post("/login")
@@ -56,7 +59,9 @@ def entrar(
     try:
         usuario = cuentas.autenticar(db, email, password)
     except cuentas.ErrorCuenta as e:
-        return renderizar(request, "login.html", {"error": str(e), "email": email.strip()}, estado=400)
+        return renderizar(
+            request, "login.html", {"error": str(e), "email": email.strip(), "portada": datos_portada(db)}, estado=400
+        )
     respuesta = _redirigir(destino_segundo_factor(usuario))
     crear_sesion(db, usuario, request, respuesta)
     return respuesta
@@ -65,10 +70,10 @@ def entrar(
 # --- Registro ---
 
 @router.get("/registro")
-def ver_registro(request: Request, sesion: Sesion | None = Depends(sesion_actual)):
+def ver_registro(request: Request, sesion: Sesion | None = Depends(sesion_actual), db: Session = Depends(get_db)):
     if (r := _segun_sesion(sesion)) is not None:
         return r
-    return renderizar(request, "registro.html", {"errores": {}, "datos": {}})
+    return renderizar(request, "registro.html", {"errores": {}, "datos": {}, "portada": datos_portada(db)})
 
 
 @router.post("/registro")
@@ -87,7 +92,7 @@ def registrarse(
     if errores:
         return renderizar(
             request, "registro.html",
-            {"errores": errores, "datos": {"nombre": nombre.strip(), "email": email.strip()}},
+            {"errores": errores, "datos": {"nombre": nombre.strip(), "email": email.strip()}, "portada": datos_portada(db)},
             estado=400,
         )
     usuario = cuentas.registrar(db, datos)
