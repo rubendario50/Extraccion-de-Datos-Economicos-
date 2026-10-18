@@ -128,6 +128,9 @@ body {
 
 ::selection { background: var(--seleccion); color: var(--tinta); }
 
+input, select { caret-color: var(--acento); }
+.tabla-marco, .opciones { scrollbar-color: var(--borde-control) transparent; scrollbar-width: thin; }
+
 h1, h2 { margin: 0; line-height: 1.25; letter-spacing: -0.01em; text-wrap: balance; }
 h1 { font-size: var(--t-h1); font-weight: 600; }
 h2 { font-size: var(--t-h2); font-weight: 600; }
@@ -172,7 +175,7 @@ a:hover { color: var(--acento-hover); text-decoration-thickness: 2px; }
 
 .formulario { display: grid; gap: var(--e-4); }
 
-.campo { display: grid; gap: var(--e-1); min-width: 0; }
+.campo { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--e-1); min-width: 0; }
 
 label, legend {
   font-size: var(--t-chico);
@@ -250,9 +253,11 @@ input::placeholder { color: var(--tinta-3); opacity: 1; }
 }
 .boton:active { transform: scale(0.97); }
 .boton-principal { background: var(--acento); color: var(--sobre-acento); }
-.boton-principal:hover { background: var(--acento-hover); color: var(--sobre-acento); text-decoration: none; }
 .boton-secundario { background: var(--superficie); color: var(--tinta); border-color: var(--borde-control); }
-.boton-secundario:hover { background: var(--superficie-2); color: var(--tinta); text-decoration: none; }
+@media (hover: hover) and (pointer: fine) {
+  .boton-principal:hover { background: var(--acento-hover); color: var(--sobre-acento); text-decoration: none; }
+  .boton-secundario:hover { background: var(--superficie-2); color: var(--tinta); text-decoration: none; }
+}
 
 .enlace {
   padding: 0;
@@ -301,11 +306,11 @@ input::placeholder { color: var(--tinta-3); opacity: 1; }
   text-decoration: none;
 }
 .acceso-lema {
-  max-width: 24ch;
-  font-size: 1.75rem;
-  line-height: 1.2;
+  max-width: 20ch;
+  font-size: 2.25rem;
+  line-height: 1.15;
   font-weight: 450;
-  letter-spacing: -0.02em;
+  letter-spacing: -0.025em;
   color: var(--barra-tinta);
   text-wrap: balance;
 }
@@ -319,24 +324,18 @@ input::placeholder { color: var(--tinta-3); opacity: 1; }
   display: grid;
   gap: var(--e-5);
 }
-.acceso-hoja h1 { font-size: 1.625rem; letter-spacing: -0.02em; }
-.intro { color: var(--tinta-2); max-width: 60ch; }
+.acceso-hoja h1 { font-size: 2rem; letter-spacing: -0.025em; }
+.acceso-hoja input[type="text"], .acceso-hoja input[type="email"], .acceso-hoja input[type="password"] { min-height: 3rem; }
+.acceso-hoja .boton { min-height: 3rem; }
+.intro { color: var(--tinta); max-width: 60ch; }
 .acceso-hoja .boton-principal { width: 100%; }
 .boton-google { width: 100%; }
 .icono-google { width: 1.125rem; height: 1.125rem; flex: none; }
 
 .separador {
-  display: flex;
-  align-items: center;
-  gap: var(--e-3);
-  color: var(--tinta-3);
-  font-size: var(--t-meta);
-}
-.separador::before, .separador::after {
-  content: "";
-  flex: 1;
-  height: 1px;
-  background: var(--borde-suave);
+  text-align: center;
+  color: var(--tinta-2);
+  font-size: var(--t-chico);
 }
 
 .pie-formulario { font-size: var(--t-chico); color: var(--tinta-2); }
@@ -432,7 +431,9 @@ input::placeholder { color: var(--tinta-3); opacity: 1; }
   background: var(--barra-control);
   color: var(--barra-tinta);
 }
-.boton-barra:hover { background: color-mix(in srgb, var(--barra-control) 80%, white); }
+@media (hover: hover) and (pointer: fine) {
+  .boton-barra:hover { background: color-mix(in srgb, var(--barra-control) 80%, white); }
+}
 .barra :focus-visible { outline-color: var(--barra-tinta); }
 
 .panel {
@@ -445,7 +446,7 @@ input::placeholder { color: var(--tinta-3); opacity: 1; }
 
 .filtros {
   display: grid;
-  grid-template-columns: minmax(15rem, 1fr) minmax(16rem, 2fr) auto auto;
+  grid-template-columns: minmax(15rem, 1fr) minmax(0, 2fr) auto auto;
   align-items: start;
   gap: var(--e-4) var(--e-5);
   padding: var(--e-4) var(--e-5);
@@ -463,6 +464,7 @@ input::placeholder { color: var(--tinta-3); opacity: 1; }
 
 /* Selector de países */
 .selector-paises {
+  min-width: 0;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -508,9 +510,12 @@ input::placeholder { color: var(--tinta-3); opacity: 1; }
   border: 0;
   border-radius: 50%;
   cursor: pointer;
-  transition: background-color 150ms ease, color 150ms ease;
+  transition: background-color 150ms ease, color 150ms ease, transform 140ms var(--salida);
 }
-.ficha-quitar:hover { background: color-mix(in srgb, var(--tinta) 10%, transparent); color: var(--tinta); }
+.ficha-quitar:active { transform: scale(0.92); }
+@media (hover: hover) and (pointer: fine) {
+  .ficha-quitar:hover { background: color-mix(in srgb, var(--tinta) 10%, transparent); color: var(--tinta); }
+}
 .ficha-quitar svg { width: 0.75rem; height: 0.75rem; }
 
 .buscador { position: relative; flex: 1 1 9rem; min-width: 9rem; }
@@ -578,21 +583,28 @@ input::placeholder { color: var(--tinta-3); opacity: 1; }
 .leyenda:empty { display: none; }
 .leyenda-item {
   display: inline-flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 0.5rem;
   min-height: 2rem;
-  padding: 0.25rem 0.5rem;
+  padding: 0.375rem 0.5rem;
   font: inherit;
-  font-size: var(--t-meta);
-  color: var(--tinta-2);
+  font-size: var(--t-chico);
+  line-height: 1.3;
+  text-align: left;
+  color: var(--tinta);
   background: none;
   border: 0;
   border-radius: var(--radio);
   cursor: pointer;
-  transition: background-color 150ms ease, color 150ms ease;
+  transition: background-color 150ms ease, color 150ms ease, transform 140ms var(--salida);
 }
-.leyenda-item:hover { background: var(--superficie-2); color: var(--tinta); }
+button.leyenda-item:active { transform: scale(0.97); }
+@media (hover: hover) and (pointer: fine) {
+  button.leyenda-item:hover { background: var(--superficie-2); }
+}
 .leyenda-linea {
+  flex: none;
+  margin-top: 0.5em;  /* centrada en la primera línea del nombre */
   width: 0.875rem;
   height: 0.25rem;
   border-radius: 2px;
@@ -600,6 +612,15 @@ input::placeholder { color: var(--tinta-3); opacity: 1; }
 }
 .leyenda-item[aria-pressed="false"] { color: var(--tinta-3); text-decoration: line-through; }
 .leyenda-item[aria-pressed="false"] .leyenda-linea { background: var(--grafica-eje); }
+/* Serie sin datos: sin color de serie, con el motivo escrito */
+.leyenda-vacia { cursor: default; color: var(--tinta-2); }
+.leyenda-vacia .leyenda-linea {
+  height: 0;
+  border-radius: 0;
+  background: none;
+  border-top: 2px dashed var(--grafica-eje);
+}
+.leyenda-nota { margin-left: 0.25rem; font-size: var(--t-meta); color: var(--tinta-3); white-space: nowrap; }
 
 .grafica-marco { position: relative; min-width: 0; }
 .grafica {
@@ -637,6 +658,8 @@ input::placeholder { color: var(--tinta-3); opacity: 1; }
 }
 
 .tabla-marco {
+  width: fit-content;
+  max-width: 100%;
   overflow: auto;
   max-height: 32rem;
   border-radius: var(--radio);
@@ -644,7 +667,7 @@ input::placeholder { color: var(--tinta-3); opacity: 1; }
   outline: 1px solid var(--borde-suave);
 }
 .tabla {
-  width: 100%;
+  width: max-content;  /* columnas a su ancho natural; el marco hace scroll si no entran */
   border-collapse: separate;
   border-spacing: 0;
   font-size: var(--t-chico);
@@ -660,10 +683,14 @@ input::placeholder { color: var(--tinta-3); opacity: 1; }
   position: sticky;
   top: 0;
   z-index: 1;
+  min-width: 7.5rem;
   background: var(--superficie-2);
   font-weight: 600;
+  line-height: 1.3;
   vertical-align: bottom;
+  white-space: normal;
 }
+.tabla thead th:first-child { min-width: 0; }
 .tabla th:first-child, .tabla td:first-child {
   position: sticky;
   left: 0;
@@ -672,8 +699,19 @@ input::placeholder { color: var(--tinta-3); opacity: 1; }
 }
 .tabla thead th:first-child { z-index: 2; background: var(--superficie-2); }
 .tabla tbody th { font-weight: 550; }
-.tabla tbody tr:hover td, .tabla tbody tr:hover th { background: color-mix(in srgb, var(--superficie-2) 55%, var(--superficie)); }
-.tabla .encabezado-serie { display: inline-flex; align-items: center; gap: 0.375rem; }
+@media (hover: hover) and (pointer: fine) {
+  .tabla tbody tr:hover td, .tabla tbody tr:hover th { background: color-mix(in srgb, var(--superficie-2) 55%, var(--superficie)); }
+}
+/* El ancho máximo va en el contenido: en celdas de tabla automática max-width no se respeta */
+.tabla .encabezado-serie { display: inline-flex; align-items: baseline; gap: 0.375rem; max-width: 15rem; text-align: right; }
+/* La marca se alinea con la primera línea del nombre, aunque el nombre o la nota ocupen varias */
+.tabla .encabezado-serie .marca-serie { align-self: flex-start; margin-top: calc((1.3em - 0.625rem) / 2); }
+/* Serie vacía: marca hueca y gris, como la línea punteada de la leyenda */
+.ficha-vacia .marca-serie, .encabezado-vacio .marca-serie {
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px var(--grafica-eje);
+}
+.encabezado-nota { display: block; font-size: var(--t-meta); font-weight: 450; color: var(--tinta-3); }
 .tabla .sin-dato { color: var(--tinta-3); }
 .tabla-vacia { padding: var(--e-5); color: var(--tinta-2); font-size: var(--t-chico); }
 
@@ -704,7 +742,8 @@ input::placeholder { color: var(--tinta-3); opacity: 1; }
 @media (max-width: 760px) {
   .acceso { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
   .acceso-marca { padding: var(--e-5) var(--e-4); gap: var(--e-3); justify-content: flex-start; }
-  .acceso-lema { font-size: 1.125rem; max-width: 36ch; color: var(--barra-tinta-2); }
+  .acceso-lema { font-size: 1.25rem; line-height: 1.3; letter-spacing: -0.01em; max-width: 30ch; color: var(--barra-tinta-2); }
+  .acceso-hoja h1 { font-size: 1.75rem; }
   .acceso-hoja { align-self: start; padding: var(--e-6) var(--e-4) var(--e-7); }
 
   .filtros { grid-template-columns: minmax(0, 1fr); padding: var(--e-4); }
@@ -719,7 +758,9 @@ input::placeholder { color: var(--tinta-3); opacity: 1; }
   .barra-nombre { display: none; }
 }
 
+@keyframes aparecer-quieto { from { opacity: 0; } }
+
 @media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after { animation-duration: 1ms !important; transition-duration: 1ms !important; }
-  .boton:active { transform: none; }
+  .boton:active, button.leyenda-item:active, .ficha-quitar:active { transform: none; }
+  .opciones { animation-name: aparecer-quieto; }
 }

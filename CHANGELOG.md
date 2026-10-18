@@ -10,7 +10,29 @@ y el proyecto usa [versionado semántico](https://semver.org/lang/es/).
 - Verificación del email al registrarse y recuperación de contraseña.
 - Marcar en la gráfica y en la tabla los años que son proyecciones del FMI.
 - Datos propios de Uruguay (previsto para la próxima versión).
-- Probar la instalación completa con Podman y PostgreSQL reales.
+
+## [0.2.1] - 2026-10-18
+
+Mejoras de diseño del panel y correcciones.
+
+### Cambiado
+
+- **Diseño del panel y de las pantallas de ingreso**: más claro y legible, en
+  computadora y celular, en modo claro y oscuro.
+- Los nombres largos de países y regiones ya no desarman la pantalla.
+- El selector de fuente muestra nombres cortos (FMI / Banco Mundial).
+
+### Corregido
+
+- Un país que la fuente elegida no publica ahora se marca como "sin datos en
+  esta fuente", en lugar de mostrarse como una serie más con etiquetas
+  encimadas.
+- Con índice base 100, un país sin datos en la fuente o en el rango ya no deja
+  vacía la gráfica entera.
+- Al cambiar de fuente o de indicador, el rango de años completo se ajusta al
+  de la nueva opción.
+- El parámetro de fuente de la API ignora mayúsculas.
+- El texto de la pantalla de ingreso nombra las fuentes reales.
 
 ## [0.2.0] - 2026-10-18
 
@@ -66,6 +88,7 @@ Primera versión funcional del sistema.
 - **Instalación con contenedores**: archivos listos para levantar la aplicación
   y la base de datos con Podman.
 
-[Pendiente]: https://github.com/rubendario50/Extraccion-de-Datos-Economicos-/compare/v0.2.0...HEAD
+[Pendiente]: https://github.com/rubendario50/Extraccion-de-Datos-Economicos-/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/rubendario50/Extraccion-de-Datos-Economicos-/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/rubendario50/Extraccion-de-Datos-Economicos-/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/rubendario50/Extraccion-de-Datos-Economicos-/releases/tag/v0.1.0

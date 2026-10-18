@@ -81,6 +81,8 @@ def test_datos_del_panel_con_dos_fuentes(cliente_api, sesion_con_semillas, clien
     assert (fmi["codigo"], bm["codigo"]) == ("FMI_DM", "BM")
     assert (fmi["desde"], fmi["hasta"]) == (1980, 2024) and (bm["desde"], bm["hasta"]) == (2010, 2020)
     assert bm["nombre"] == "Banco Mundial, World Development Indicators"
+    # El selector usa el nombre corto; el completo va en el texto de la fuente.
+    assert (fmi["corto"], bm["corto"]) == ("FMI", "Banco Mundial")
     assert set(bm["paises"]) == {"ARG", "URY", "WEOWORLD"} and "USA" in fmi["paises"]
     # Los años y países de nivel superior son los de la fuente por defecto.
     assert (pbi["desde"], pbi["paises"]) == (fmi["desde"], fmi["paises"])
@@ -133,3 +135,8 @@ def test_paginas_sin_scripts_en_linea(cliente_api):
     for etiqueta in re.findall(r"<script[^>]*>", html):
         assert "src=" in etiqueta or 'type="application/json"' in etiqueta
     assert " style=" not in html and "<style" not in html
+
+
+def test_lema_de_acceso_menciona_las_fuentes_reales(cliente_web):
+    html = cliente_web.get("/login").text
+    assert "Series del FMI y del Banco Mundial" in html and "de Uruguay para" not in html

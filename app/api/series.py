@@ -49,7 +49,9 @@ def obtener_series(
     desde: int | None = Query(None, description="Primer año (inclusive)"),
     hasta: int | None = Query(None, description="Último año (inclusive)"),
     base: int | None = Query(None, description="Año base: si se indica, las series se expresan en índice base 100"),
-    fuente: str | None = Query(None, description="Código de la fuente (FMI_DM, BM). Por defecto, la primera con datos"),
+    fuente: str | None = Query(
+        None, description="Código de la fuente (FMI_DM, BM; sin distinguir mayúsculas). Vacío o ausente: la primera con datos"
+    ),
     db: Session = Depends(get_db),
 ) -> dict:
     ind = db.scalar(select(Indicador).where(Indicador.codigo == indicador))
@@ -59,14 +61,16 @@ def obtener_series(
         raise HTTPException(400, f"Por ahora solo hay series internacionales anuales ({indicador} es {ind.alcance} {ind.frecuencia}).")
     # Nunca se mezclan fuentes: todas las series de la respuesta salen de la misma.
     fuentes = fuentes_del_indicador(db, ind.id)
-    if fuente is None:
+    # Como los países, la fuente no distingue mayúsculas (bm = BM); vacía equivale a no indicarla.
+    pedida = (fuente or "").strip()
+    if not pedida:
         fte = fuente_por_defecto(db, ind.id, fuentes)
         if fte is None:
             raise HTTPException(404, f"El indicador {indicador} no tiene fuentes definidas.")
     else:
-        fte = db.scalar(select(Fuente).where(Fuente.codigo == fuente))
+        fte = db.scalar(select(Fuente).where(func.upper(Fuente.codigo) == pedida.upper()))
         if fte is None:
-            raise HTTPException(404, f"Fuente desconocida: {fuente}")
+            raise HTTPException(404, f"Fuente desconocida: {pedida}")
         if fte not in fuentes:
             disponibles = ", ".join(f.codigo for f in fuentes) or "ninguna"
             raise HTTPException(404, f"La fuente {fte.codigo} no publica {indicador} (disponibles: {disponibles}).")
@@ -112,16 +116,15 @@ def obtener_series(
                 .order_by(DatoInternacionalAnual.anio)
             ).all()
         )
-        if base is not None:
+        en_rango = lambda anio: (desde is None or anio >= desde) and (hasta is None or anio <= hasta)  # noqa: E731
+        # Una serie sin ningún dato en el rango (o en la fuente) vuelve vacía y no participa del índice:
+        # el panel la muestra como "sin datos". El 422 queda para la que tiene datos pero no el año base.
+        if base is not None and any(v is not None for a, v in valores.items() if en_rango(a)):
             try:
                 valores = a_base_100(valores, base)
             except ErrorIndice as e:
                 raise HTTPException(422, f"{pais.nombre}: {e}") from e
-        datos = [
-            {"anio": anio, "valor": valor}
-            for anio, valor in valores.items()
-            if (desde is None or anio >= desde) and (hasta is None or anio <= hasta)
-        ]
+        datos = [{"anio": anio, "valor": valor} for anio, valor in valores.items() if en_rango(anio)]
         series.append({"pais": codigo, "codigo": pais.codigo, "nombre": pais.nombre, "fuente": fte.codigo, "datos": datos})
 
     return {

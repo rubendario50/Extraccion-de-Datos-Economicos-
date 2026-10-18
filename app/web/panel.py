@@ -19,6 +19,8 @@ NOMBRES_FUENTE = {
     "FMI_DM": "FMI, World Economic Outlook (DataMapper)",
     "BM": "Banco Mundial, World Development Indicators",
 }
+# Nombre corto para el selector de fuente (el completo no entra en el control).
+NOMBRES_CORTOS_FUENTE = {"FMI_DM": "FMI", "BM": "Banco Mundial"}
 PAISES_POR_DEFECTO = ["URY", "ARG", "WEOWORLD"]
 
 
@@ -55,6 +57,7 @@ def datos_del_panel(db: Session) -> dict:
             lista_fuentes.append({
                 "codigo": fte.codigo,
                 "nombre": NOMBRES_FUENTE.get(fte.codigo, fte.nombre),
+                "corto": NOMBRES_CORTOS_FUENTE.get(fte.codigo, fte.codigo),
                 "desde": desde,
                 "hasta": hasta,
                 "paises": sorted(codigos[i] for i in con_datos if i in paises),

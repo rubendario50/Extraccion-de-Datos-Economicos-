@@ -106,7 +106,10 @@
     for (const f of ind.fuentes) {
       const o = document.createElement("option");
       o.value = f.codigo;
-      o.textContent = f.desde == null ? `${f.nombre} (sin datos)` : f.nombre;
+      // Nombre corto en el control (el completo no entra); el completo va debajo de la gráfica.
+      const corto = f.corto || f.nombre;
+      o.textContent = f.desde == null ? `${corto} (sin datos)` : corto;
+      o.title = f.nombre;
       if (f.codigo === estado.fuente) o.selected = true;
       el.fuente.append(o);
     }
@@ -117,7 +120,7 @@
   function leerUrl() {
     const q = new URLSearchParams(location.search);
     if (porCodigoIndicador.has(q.get("indicador"))) estado.indicador = q.get("indicador");
-    if (q.get("fuente")) estado.fuente = q.get("fuente");
+    if (q.get("fuente")) estado.fuente = q.get("fuente").trim().toUpperCase();
     const paises = (q.get("paises") || "").split(",").filter((c) => porCodigoPais.has(c));
     estado.paises = (paises.length ? paises : datos.por_defecto.filter((c) => porCodigoPais.has(c))).slice(0, MAX_SERIES);
     estado.paises.forEach(asignarRanura);
@@ -153,6 +156,14 @@
   }
 
   const acotar = (v, min, max) => Math.min(Math.max(v, min), max);
+
+  // Al cambiar de fuente o de indicador: si un extremo del rango estaba en el borde de la opción
+  // anterior (el rango completo), pasa al borde de la nueva en lugar de quedar acotado al viejo.
+  function seguirRangoCompleto(anterior) {
+    if (!anterior || anterior.desde == null) return;
+    if (estado.desde != null && estado.desde <= Math.max(anterior.desde, ANIO_INICIAL_PREFERIDO)) estado.desde = null;
+    if (estado.hasta != null && estado.hasta >= anterior.hasta) estado.hasta = null;
+  }
 
   function prepararAnios() {
     const ind = fuenteActual();
@@ -192,9 +203,10 @@
       const pais = porCodigoPais.get(codigo);
       const li = document.createElement("li");
       li.className = `ficha serie-${ranuras.get(codigo)}`;
+      li.dataset.codigo = codigo;
       li.innerHTML =
         `<span class="marca-serie" aria-hidden="true"></span>` +
-        `<span class="ficha-nombre">${escapar(pais.nombre)}</span>` +
+        `<span class="ficha-nombre" title="${escapar(pais.nombre)}">${escapar(pais.nombre)}</span>` +
         `<button type="button" class="ficha-quitar" data-codigo="${escapar(codigo)}" aria-label="Quitar ${escapar(pais.nombre)}">${ICONO_QUITAR}</button>`;
       el.fichas.append(li);
     }
@@ -320,13 +332,17 @@
 
   el.filtros.addEventListener("submit", (e) => e.preventDefault());
   el.indicador.addEventListener("change", () => {
+    const anterior = fuenteActual();
     estado.indicador = el.indicador.value;
     prepararFuentes();
+    seguirRangoCompleto(anterior);
     prepararAnios();
     pedirSeries();
   });
   el.fuente.addEventListener("change", () => {
+    const anterior = fuenteActual();
     estado.fuente = el.fuente.value;
+    seguirRangoCompleto(anterior);
     el.nombreFuente.textContent = `Fuente: ${fuenteActual().nombre}`;
     prepararAnios();
     pedirSeries();
@@ -475,26 +491,57 @@
     return { FMI_DM: "El FMI", BM: "El Banco Mundial" }[fuente] || "La fuente";
   }
 
+  const tieneDatos = (s) => s.datos.some((d) => d.valor != null);
+
+  // Por qué una serie vino vacía: la fuente no publica ese país, o no hay datos en los años elegidos.
+  // null si tiene datos.
+  function motivoVacia(s, cuerpo) {
+    if (tieneDatos(s)) return null;
+    const ind = porCodigoIndicador.get(cuerpo.indicador.codigo);
+    const fte = ind && ind.fuentes.find((f) => f.codigo === cuerpo.fuente);
+    return fte && !fte.paises.includes(s.pais) ? "fuente" : "rango";
+  }
+
+  const TEXTO_VACIA = { fuente: "sin datos en esta fuente", rango: "sin datos en este rango" };
+
   function pintar(cuerpo) {
     const series = cuerpo.series;
     elegirFormato(series);
     el.unidad.textContent = textoUnidad(cuerpo.indicador) + (cuerpo.base != null ? ` · ${cuerpo.base} = 100` : "");
 
-    const sinDatos = series.filter((s) => !s.datos.some((d) => d.valor != null)).map((s) => s.nombre);
-    const conDatos = series.filter((s) => s.datos.some((d) => d.valor != null));
-    if (sinDatos.length && conDatos.length) {
-      el.faltantes.textContent = `Sin datos en este rango: ${sinDatos.join(", ")}.`;
+    const conDatos = series.filter(tieneDatos);
+    // La ficha de una serie vacía lleva la misma marca que la leyenda (hueca y gris).
+    const vaciasCodigos = new Set(series.filter((s) => !tieneDatos(s)).map((s) => s.pais));
+    el.fichas.querySelectorAll(".ficha").forEach((f) => f.classList.toggle("ficha-vacia", vaciasCodigos.has(f.dataset.codigo)));
+    const vacias = (motivo) => series.filter((s) => motivoVacia(s, cuerpo) === motivo).map((s) => s.nombre);
+    const sinFuente = vacias("fuente");
+    const sinRango = vacias("rango");
+    if (conDatos.length && (sinFuente.length || sinRango.length)) {
+      el.faltantes.textContent = [
+        sinFuente.length ? `${nombreCorto(cuerpo.fuente)} no publica datos de ${sinFuente.join(", ")}.` : "",
+        sinRango.length ? `Sin datos en este rango: ${sinRango.join(", ")}.` : "",
+      ].filter(Boolean).join(" ");
       el.faltantes.hidden = false;
     }
 
     const anios = [...new Set(series.flatMap((s) => s.datos.map((d) => d.anio)))].sort((a, b) => a - b);
     if (!conDatos.length) {
       if (grafica) grafica.clear();
-      mostrarEstado(
-        "vacio",
-        "No hay datos en ese rango",
-        `${nombreCorto(cuerpo.fuente)} no publica ${cuerpo.indicador.nombre.toLowerCase()} para ${series.map((s) => s.nombre).join(", ")} entre ${estado.desde} y ${estado.hasta}. Probá con otros años.`
-      );
+      const otras = (porCodigoIndicador.get(cuerpo.indicador.codigo)?.fuentes.length || 0) > 1;
+      if (sinFuente.length === series.length) {
+        mostrarEstado(
+          "vacio",
+          "Sin datos en esta fuente",
+          `${nombreCorto(cuerpo.fuente)} no publica ${cuerpo.indicador.nombre} para ${series.map((s) => s.nombre).join(", ")}.` +
+            (otras ? " Probá con otra fuente." : " Probá con otros países.")
+        );
+      } else {
+        mostrarEstado(
+          "vacio",
+          "No hay datos en ese rango",
+          `${nombreCorto(cuerpo.fuente)} no publica ${cuerpo.indicador.nombre} para ${series.map((s) => s.nombre).join(", ")} entre ${estado.desde} y ${estado.hasta}. Probá con otros años.`
+        );
+      }
       vaciarTabla("Sin datos para mostrar.");
       return;
     }
@@ -510,9 +557,12 @@
     }
     const c = colores();
     if (!grafica) grafica = echarts.init(el.grafica, null, { renderer: "canvas" });
-    const pocas = cuerpo.series.length <= 4;
+    const vacia = cuerpo.series.map((s) => !tieneDatos(s));
+    const pocas = vacia.filter((v) => !v).length <= 4;
     const angosto = el.grafica.clientWidth < 560;
+    const etiquetas = pocas && !angosto;
     const slot = (s) => ranuras.get(s.pais) || 1;
+    const quieto = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
     const series = cuerpo.series.map((s, i) => {
       const valores = new Map(s.datos.map((d) => [d.anio, d.valor]));
@@ -527,9 +577,12 @@
         itemStyle: { color: c.series[slot(s)], borderColor: c.superficie, borderWidth: 2 },
         emphasis: { focus: "series", lineStyle: { width: 2.5 } },
         blur: { lineStyle: { opacity: 0.25 } },
+        // Una serie sin datos no dibuja etiqueta (si no, queda encimada sobre las otras).
         endLabel: {
-          show: pocas && !angosto,
+          show: etiquetas && !vacia[i],
           formatter: "{a}",
+          width: 100,
+          overflow: "truncate",
           color: c.tinta2,
           fontFamily: c.fuente,
           fontSize: 12,
@@ -554,12 +607,13 @@
 
     grafica.setOption(
       {
+        animation: !quieto,
         animationDuration: 300,
         animationDurationUpdate: 250,
         animationEasingUpdate: "cubicOut",
         textStyle: { fontFamily: c.fuente, color: c.tinta2 },
         color: cuerpo.series.map((s) => c.series[slot(s)]),
-        grid: { left: 8, right: pocas && !angosto ? 112 : 16, top: 16, bottom: 64, containLabel: true },
+        grid: { left: 8, right: etiquetas ? 112 : 16, top: 16, bottom: 64, containLabel: true },
         // La leyenda va en HTML (arriba de la gráfica) para que nunca tape el eje en pantallas angostas.
         legend: { show: false, selected: Object.fromEntries(cuerpo.series.map((s) => [s.nombre, !ocultas.has(s.pais)])) },
         tooltip: {
@@ -573,6 +627,7 @@
           axisPointer: { type: "line", lineStyle: { color: c.eje, width: 1 } },
           formatter: (params) => {
             const filas = params
+              .filter((p) => !vacia[p.seriesIndex])
               .map((p) => {
                 const s = cuerpo.series[p.seriesIndex];
                 return (
@@ -590,7 +645,13 @@
           boundaryGap: false,
           axisLine: { lineStyle: { color: c.eje } },
           axisTick: { show: false },
-          axisLabel: { color: c.tinta3, fontSize: 12, hideOverlap: true },
+          // Con etiquetas de fin de línea, los años de los extremos van hacia adentro para no pisarlas.
+          axisLabel: {
+            color: c.tinta3,
+            fontSize: 12,
+            hideOverlap: true,
+            ...(etiquetas ? { alignMinLabel: "left", alignMaxLabel: "right" } : {}),
+          },
         },
         yAxis: {
           type: "value",
@@ -636,16 +697,25 @@
     el.leyenda.replaceChildren();
     for (const s of cuerpo.series) {
       const li = document.createElement("li");
+      const motivo = motivoVacia(s, cuerpo);
+      if (motivo) {
+        // Sin datos: no hay línea que ocultar, así que no es un botón.
+        li.innerHTML =
+          `<span class="leyenda-item leyenda-vacia"><span class="leyenda-linea" aria-hidden="true"></span>` +
+          `<span>${escapar(s.nombre)} <span class="leyenda-nota">${TEXTO_VACIA[motivo]}</span></span></span>`;
+        el.leyenda.append(li);
+        continue;
+      }
       li.innerHTML =
         `<button type="button" class="leyenda-item serie-${ranuras.get(s.pais) || 1}" data-codigo="${escapar(s.pais)}" ` +
         `data-nombre="${escapar(s.nombre)}" aria-pressed="${!ocultas.has(s.pais)}">` +
-        `<span class="leyenda-linea" aria-hidden="true"></span>${escapar(s.nombre)}</button>`;
+        `<span class="leyenda-linea" aria-hidden="true"></span><span>${escapar(s.nombre)}</span></button>`;
       el.leyenda.append(li);
     }
   }
 
   el.leyenda.addEventListener("click", (e) => {
-    const boton = e.target.closest(".leyenda-item");
+    const boton = e.target.closest("button.leyenda-item");
     if (!boton || !grafica) return;
     const codigo = boton.dataset.codigo;
     if (ocultas.has(codigo)) ocultas.delete(codigo);
@@ -661,9 +731,12 @@
     const tbody = el.tabla.tBodies[0];
     const cabeza = ['<tr><th scope="col">Año</th>'];
     for (const s of cuerpo.series) {
+      const motivo = motivoVacia(s, cuerpo);
       cabeza.push(
-        `<th scope="col"><span class="encabezado-serie serie-${ranuras.get(s.pais) || 1}">` +
-          `<span class="marca-serie" aria-hidden="true"></span>${escapar(s.nombre)}</span></th>`
+        `<th scope="col"><span class="encabezado-serie serie-${ranuras.get(s.pais) || 1}${motivo ? " encabezado-vacio" : ""}">` +
+          `<span class="marca-serie" aria-hidden="true"></span><span>${escapar(s.nombre)}` +
+          (motivo ? `<span class="encabezado-nota">${TEXTO_VACIA[motivo]}</span>` : "") +
+          `</span></span></th>`
       );
     }
     cabeza.push("</tr>");

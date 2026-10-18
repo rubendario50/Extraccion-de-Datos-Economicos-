@@ -280,3 +280,56 @@ def test_series_fuente_bm_con_rango_y_pais_sin_datos(con_dos_fuentes):
     r = con_dos_fuentes.get("/api/series", params={"indicador": "PBI_USD_CORR", "paises": "USA", "fuente": "BM"})
     assert r.status_code == 200
     assert r.json()["series"][0]["datos"] == []
+
+
+def test_series_fuente_sin_distinguir_mayusculas(con_dos_fuentes):
+    """Como los países: bm = Bm = BM, y la respuesta trae el código tal como está guardado."""
+    for escrita in ("bm", "Bm", " BM "):
+        r = con_dos_fuentes.get("/api/series", params={"indicador": "PBI_USD_CORR", "paises": "ARG", "fuente": escrita})
+        assert r.status_code == 200, escrita
+        assert r.json()["fuente"] == "BM" and r.json()["series"][0]["fuente"] == "BM"
+    r = con_dos_fuentes.get("/api/series", params={"indicador": "PBI_USD_CORR", "paises": "ARG", "fuente": "fmi_dm"})
+    assert r.status_code == 200 and r.json()["fuente"] == "FMI_DM"
+
+
+@pytest.mark.parametrize("vacia", ["", "   "])
+def test_series_fuente_vacia_usa_la_fuente_por_defecto(con_dos_fuentes, vacia):
+    r = con_dos_fuentes.get("/api/series", params={"indicador": "PBI_USD_CORR", "paises": "ARG", "fuente": vacia})
+    assert r.status_code == 200
+    assert r.json()["fuente"] == "FMI_DM"
+    r = con_dos_fuentes.get("/api/series", params={"indicador": "DEUDA_GOB_CENTRAL", "paises": "URY", "fuente": vacia})
+    assert r.status_code == 200 and r.json()["fuente"] == "BM"
+
+
+def test_series_fuente_desconocida_en_minusculas_conserva_lo_escrito(con_dos_fuentes):
+    r = con_dos_fuentes.get("/api/series", params={"indicador": "PBI_USD_CORR", "paises": "URY", "fuente": "xyz"})
+    assert r.status_code == 404 and "Fuente desconocida: xyz" in r.json()["detail"]
+
+
+def test_series_base_100_ignora_la_serie_sin_datos_en_la_fuente(con_dos_fuentes):
+    """USA no tiene PBI en el BM: vuelve vacía y no impide calcular el índice de URY (antes daba 422)."""
+    r = con_dos_fuentes.get(
+        "/api/series", params={"indicador": "PBI_USD_CORR", "paises": "URY,USA", "fuente": "BM", "base": 2010}
+    )
+    assert r.status_code == 200, r.text
+    ury, usa = r.json()["series"]
+    assert {d["anio"]: d["valor"] for d in ury["datos"]}[2010] == pytest.approx(100)
+    assert usa["datos"] == []
+
+
+def test_series_base_100_ignora_la_serie_sin_datos_en_el_rango(con_datos):
+    """URY (FMI) tiene datos desde 2000: entre 1980 y 1990 vuelve vacía aunque no tenga el año base 1980."""
+    r = con_datos.get(
+        "/api/series", params={"indicador": "PBI_USD_CORR", "paises": "ARG,URY", "desde": 1980, "hasta": 1990, "base": 1980}
+    )
+    assert r.status_code == 200, r.text
+    arg, ury = r.json()["series"]
+    assert arg["datos"] == [{"anio": 1980, "valor": pytest.approx(100)}]
+    assert all(d["valor"] is None for d in ury["datos"])
+
+
+def test_series_base_100_con_datos_pero_sin_anio_base_sigue_dando_422(con_dos_fuentes):
+    r = con_dos_fuentes.get(
+        "/api/series", params={"indicador": "PBI_USD_CORR", "paises": "URY,USA", "fuente": "FMI_DM", "base": 2015}
+    )
+    assert r.status_code == 422 and "año base 2015" in r.json()["detail"]
