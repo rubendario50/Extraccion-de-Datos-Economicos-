@@ -1,0 +1,10 @@
+{% extends "acceso.html" %}
+{% block titulo %}Códigos de recuperación · Datos Económicos{% endblock %}
+{% block hoja %}
+<h1>Guardá tus códigos de recuperación</h1>
+<p class="intro">Si perdés el celular, cada código te deja entrar una vez en lugar del código de la app. <strong>Es la única vez que los vas a ver:</strong> anotalos o guardalos en un gestor de contraseñas.</p>
+<ul class="codigos" translate="no" aria-label="Códigos de recuperación">
+  {% for c in codigos %}<li>{{ c }}</li>{% endfor %}
+</ul>
+<a class="boton boton-principal" href="/">Ya los guardé, ir al panel</a>
+{% endblock %}

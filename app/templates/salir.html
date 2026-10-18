@@ -1,0 +1,11 @@
+{% extends "acceso.html" %}
+{% block titulo %}Salir · Datos Económicos{% endblock %}
+{% block hoja %}
+<h1>¿Cerrar la sesión?</h1>
+<p class="intro">Vas a salir como {{ usuario.nombre }} ({{ usuario.email }}).</p>
+<form method="post" action="/salir" class="formulario">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <button type="submit" class="boton boton-principal">Salir</button>
+</form>
+<p class="pie-formulario"><a href="/">Volver al panel</a></p>
+{% endblock %}

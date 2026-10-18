@@ -1,0 +1,395 @@
+codigo,nombre,nombre_en,iso2,iso3,es_agregado,fmi_dm,fmi_weo
+001,Afganistán,Afghanistan,AF,AFG,0,AFG,512
+002,África (analítico),Africa (Analytical),,,1,AFR,
+003,África (región),Africa (Region),,,1,AFQ,
+004,África (SPR),Africa,,,1,SPR_GD_AFR,
+005,África Subsahariana,Sub-Saharan Africa,,,1,SSA,603
+006,África Subsahariana (región),Sub-Saharan Africa (Region),,,1,SSQ,
+007,"África Subsahariana (región, SPR)",Sub-Saharan Africa (Region),,,1,AFR_SSQ,
+008,África Subsahariana en desarrollo de ingreso bajo,Low-Income Developing Sub-Saharan Africa,,,1,FM_LICSSA,
+009,África Subsahariana excl. Nigeria y Sudáfrica,SSA excluding Nigeria and South Africa,,,1,SSENS,
+010,África Subsahariana excl. Sudán del Sur,"Sub-Saharan Africa, excluding South Sudan",,,1,SSXSD,
+011,África Subsahariana excl. Zimbabue,SSA excluding Zimbabwe,,,1,SSXZ,
+012,Albania,Albania,AL,ALB,0,ALB,914
+013,Alemania,Germany,DE,DEU,0,DEU,134
+014,América del Norte,North America,,,1,NMQ,
+015,América del Sur,South America,,,1,SMQ,
+016,América Latina emergente y de ingreso medio,Emerging and Middle-Income Latin America,,,1,FM_EMELA,
+017,América Latina en desarrollo de ingreso bajo,Low-Income Developing Latin America,,,1,FM_LICLA,
+018,América Latina y el Caribe,Latin America and the Caribbean,,,1,WE,205
+019,Andorra,Andorra,AD,AND,0,AND,171
+020,Angola,Angola,AO,AGO,0,AGO,614
+021,Anguila,Anguilla,AI,AIA,0,AIA,
+022,Antigua y Barbuda,Antigua and Barbuda,AG,ATG,0,ATG,311
+023,Arabia Saudita,Saudi Arabia,SA,SAU,0,SAU,456
+024,Argelia,Algeria,DZ,DZA,0,DZA,612
+025,Argentina,Argentina,AR,ARG,0,ARG,213
+026,Armenia,Armenia,AM,ARM,0,ARM,911
+027,Aruba,Aruba,AW,ABW,0,ABW,314
+028,ASEAN-5,ASEAN-5,,,1,AS5,510
+029,Asia (SPR),Asia,,,1,SPR_GD_Asia,
+030,Asia Central y el Cáucaso,Central Asia and the Caucasus,,,1,CAQ,
+031,Asia emergente (Monitor Fiscal),Emerging Asia,,,1,FAD_EMAsia,
+032,Asia emergente excl. Japón incl. NIE,Emerging Asia excl Japan incl NIEs,,,1,MAF,
+033,Asia emergente y de ingreso medio,Emerging and Middle-Income Asia,,,1,FM_EMEAsia,
+034,Asia en desarrollo de ingreso bajo,Low-Income Developing Asia,,,1,FM_LICAsia,
+035,Asia Meridional,South Asia,,,1,SAQ,
+036,Asia Oriental,East Asia,,,1,EAQ,
+037,Asia y el Pacífico,Asia and Pacific,,,1,APQ,
+038,Australia,Australia,AU,AUS,0,AUS,193
+039,Australia y Nueva Zelanda,Australia and New Zealand,,,1,AZQ,
+040,Austria,Austria,AT,AUT,0,AUT,122
+041,Azerbaiyán,Azerbaijan,AZ,AZE,0,AZE,912
+042,Bahamas,"Bahamas, The",BS,BHS,0,BHS,313
+043,Bangladés,Bangladesh,BD,BGD,0,BGD,513
+044,Barbados,Barbados,BB,BRB,0,BRB,316
+045,Baréin,Bahrain,BH,BHR,0,BHR,419
+046,Bélgica,Belgium,BE,BEL,0,BEL,124
+047,Belice,Belize,BZ,BLZ,0,BLZ,339
+048,Benín,Benin,BJ,BEN,0,BEN,638
+049,Bermudas,Bermuda,BM,BMU,0,BMU,
+050,Bielorrusia,Belarus,BY,BLR,0,BLR,913
+051,Bolivia,Bolivia,BO,BOL,0,BOL,218
+052,"Bonaire, San Eustaquio y Saba","Bonaire, Sint Eustatius and Saba",BQ,BES,0,BES,
+053,Bosnia y Herzegovina,Bosnia and Herzegovina,BA,BIH,0,BIH,963
+054,Botsuana,Botswana,BW,BWA,0,BWA,616
+055,Brasil,Brazil,BR,BRA,0,BRA,223
+056,Brunéi,Brunei Darussalam,BN,BRN,0,BRN,516
+057,Bulgaria,Bulgaria,BG,BGR,0,BGR,918
+058,Burkina Faso,Burkina Faso,BF,BFA,0,BFA,748
+059,Burundi,Burundi,BI,BDI,0,BDI,618
+060,Bután,Bhutan,BT,BTN,0,BTN,514
+061,Cabo Verde,Cabo Verde,CV,CPV,0,CPV,624
+062,Camboya,Cambodia,KH,KHM,0,KHM,522
+063,Camerún,Cameroon,CM,CMR,0,CMR,622
+064,Canadá,Canada,CA,CAN,0,CAN,156
+065,Caribe,Caribbean,,,1,CBQ,
+066,Caribe e Islas del Pacífico (SPR),Caribbean and Pacific Islands,,,1,SPR_GD_CPI,
+067,Catar,Qatar,QA,QAT,0,QAT,453
+068,Categoría I (Monitor Fiscal),Catergory I,,,1,FAD_C1,
+069,Categoría II (Monitor Fiscal),Catergory II,,,1,FAD_C2,
+070,Categoría III (Monitor Fiscal),Catergory III,,,1,FAD_C3,
+071,Categoría IV (Monitor Fiscal),Catergory IV,,,1,FAD_C4,
+072,Categoría V (Monitor Fiscal),Catergory V,,,1,FAD_C5,
+073,Categoría VI (Monitor Fiscal),Catergory VI,,,1,FAD_C6,
+074,CEMAC,CEMAC,,,1,CEMAC,
+075,Centroamérica,Central America,,,1,CMQ,
+076,Chad,Chad,TD,TCD,0,TCD,628
+077,Chequia,Czech Republic,CZ,CZE,0,CZE,935
+078,Chile,Chile,CL,CHL,0,CHL,228
+079,China,"China, People's Republic of",CN,CHN,0,CHN,924
+080,Chipre,Cyprus,CY,CYP,0,CYP,423
+081,Cisjordania y Gaza,West Bank and Gaza,,,0,WBG,487
+082,Colombia,Colombia,CO,COL,0,COL,233
+083,COMESA (miembros de África Subsahariana),COMESA (SSA members),,,1,COMESA,
+084,Comoras,Comoros,KM,COM,0,COM,632
+085,Comunidad de África Oriental,East African Community,,,1,EAC,
+086,Comunidad de África Oriental (5),East African Community,,,1,EAC-5,
+087,Comunidad de Estados Independientes,Commonwealth of Independent States,,,1,CIS,
+088,Comunidad de Estados Independientes y Mongolia,Commonwealth of Independent States and Mongolia,,,1,CISM,
+089,Comunidad Económica de Estados de África Occidental,Economic Community of West African States,,,1,ECOWAS,
+090,"Congo, República del","Congo, Republic of",CG,COG,0,COG,634
+091,"Congo, República Democrática del","Congo, Dem. Rep. of the",CD,COD,0,COD,636
+092,Corea del Norte,"Korea, Dem. People's Rep. of",KP,PRK,0,PRK,
+093,Corea del Sur,"Korea, Republic of",KR,KOR,0,KOR,542
+094,Costa de Marfil,Côte d'Ivoire,CI,CIV,0,CIV,662
+095,Costa Rica,Costa Rica,CR,CRI,0,CRI,238
+096,Costeros,Coastal,,,1,NONC872,
+097,Croacia,Croatia,HR,HRV,0,HRV,960
+098,Cuba,Cuba,CU,CUB,0,CUB,
+099,Curazao,Curacao,CW,CUW,0,CUW,
+100,Dinamarca,Denmark,DK,DNK,0,DNK,128
+101,Dominica,Dominica,DM,DMA,0,DMA,321
+102,Economías avanzadas,Advanced economies,,,1,ADVEC,110
+103,Economías avanzadas (Monitor Fiscal),Advanced Economies,,,1,FAD_ADV,
+104,Economías avanzadas (reglas y consejos fiscales),Advanced Economies,,,1,FR_FC_ADV,
+105,Economías avanzadas (SPR),Advanced Economies,,,1,SPR_GD_AM,
+106,"Economías avanzadas excl. EE.UU., zona euro y Japón","Adv econ excl US, Euro, Japan",,,1,AEEUEJ,
+107,Economías de mercados emergentes,Emerging market economies,,,1,EME,
+108,Economías emergentes y de ingreso medio (Monitor Fiscal),Emerging Market and Middle-Income Economies,,,1,FM_EMG,
+109,Economías emergentes y en desarrollo,Emerging market and developing economies,,,1,OEMDC,200
+110,Economías emergentes y en desarrollo (reglas y consejos fiscales),Emerging Market and Developing Economies,,,1,FR_FC_EME,
+111,Economías emergentes y en desarrollo de Asia,Emerging and Developing Asia,,,1,DA,505
+112,Economías emergentes y en desarrollo de Europa,Emerging and Developing Europe,,,1,EDE,903
+113,Economías emergentes y en desarrollo incl. algunas avanzadas,EM and dev econ incl sel adv econ,,,1,MCA,
+114,Ecuador,Ecuador,EC,ECU,0,ECU,248
+115,Egipto,Egypt,EG,EGY,0,EGY,469
+116,El Salvador,El Salvador,SV,SLV,0,SLV,253
+117,Emiratos Árabes Unidos,United Arab Emirates,AE,ARE,0,ARE,466
+118,Eritrea,Eritrea,ER,ERI,0,ERI,643
+119,Eslovaquia,Slovak Republic,SK,SVK,0,SVK,936
+120,Eslovenia,Slovenia,SI,SVN,0,SVN,961
+121,España,Spain,ES,ESP,0,ESP,184
+122,Estados Unidos,United States,US,USA,0,USA,111
+123,Estonia,Estonia,EE,EST,0,EST,939
+124,Esuatini,Eswatini,SZ,SWZ,0,SWZ,734
+125,Etiopía,Ethiopia,ET,ETH,0,ETH,644
+126,Europa,Europe,,,1,EUR,
+127,Europa (región),Europe,,,1,EUQ,
+128,Europa (SPR),Europe,,,1,SPR_GD_EUR,
+129,Europa Central y del Este,Central and Eastern Europe,,,1,CEE,
+130,Europa del Este,Eastern Europe,,,1,EEQ,
+131,Europa emergente y de ingreso medio,Emerging and Middle-Income Europe,,,1,FM_EMEEU,
+132,Europa Occidental,Western Europe,,,1,WEQ,
+133,Exportadores de combustibles,Export earnings: fuel,,,1,EEF,
+134,Exportadores de no combustibles,Export earnings: nonfuel,,,1,EENF,
+135,Filipinas,Philippines,PH,PHL,0,PHL,566
+136,Finlandia,Finland,FI,FIN,0,FIN,172
+137,Fiyi,Fiji,FJ,FJI,0,FJI,819
+138,Francia,France,FR,FRA,0,FRA,132
+139,G-20 (Monitor Fiscal),G-20,,,1,FAD_G20,
+140,G-20 avanzados (Monitor Fiscal),G-20 Advanced,,,1,FAD_G20Adv,
+141,"G-20 avanzados (Monitor Fiscal, FM)",Advanced G-20,,,1,FM_AdvG20,
+142,G-20 emergentes (Monitor Fiscal),G-20 Emerging,,,1,FAD_G20Emg,
+143,"G-20 emergentes (Monitor Fiscal, FM)",Emerging G-20,,,1,FM_EMEG20,
+144,G-7 (Monitor Fiscal),G-7,,,1,FAD_G7,
+145,Gabón,Gabon,GA,GAB,0,GAB,646
+146,Gambia,"Gambia, The",GM,GMB,0,GMB,648
+147,Georgia,Georgia,GE,GEO,0,GEO,915
+148,Ghana,Ghana,GH,GHA,0,GHA,652
+149,Gibraltar,Gibraltar,GI,GIB,0,GIB,
+150,Granada,Grenada,GD,GRD,0,GRD,328
+151,Grecia,Greece,GR,GRC,0,GRC,174
+152,Groenlandia,Greenland,GL,GRL,0,GRL,
+153,Grupo África (Monitor Fiscal),African Group,,,1,FAD_AFR,
+154,Grupo Asia y Pacífico (Monitor Fiscal),Asia & Pacific Group,,,1,FAD_APD,
+155,Grupo Europa (Monitor Fiscal),European Group,,,1,FAD_EUR,
+156,Grupo Hemisferio Occidental (Monitor Fiscal),Western Hemisphere Group,,,1,FAD_WHD,
+157,Grupo Oriente Medio y Asia Central (Monitor Fiscal),Middle East and Central Asia Group,,,1,FAD_MCD,
+158,Guadalupe,Guadeloupe,GP,GLP,0,GLP,
+159,Guam,Guam,GU,GUM,0,GUM,
+160,Guatemala,Guatemala,GT,GTM,0,GTM,258
+161,Guayana Francesa,French Guiana,GF,GUF,0,GUF,
+162,Guinea,Guinea,GN,GIN,0,GIN,656
+163,Guinea Ecuatorial,Equatorial Guinea,GQ,GNQ,0,GNQ,642
+164,Guinea-Bisáu,Guinea-Bissau,GW,GNB,0,GNB,654
+165,Guyana,Guyana,GY,GUY,0,GUY,336
+166,Haití,Haiti,HT,HTI,0,HTI,263
+167,Hemisferio Occidental (región),Western Hemisphere (Region),,,1,WHQ,
+168,Hemisferio Occidental (SPR),Western Hemisphere,,,1,SPR_GD_WHD,
+169,Honduras,Honduras,HN,HND,0,HND,268
+170,Hong Kong (RAE),Hong Kong SAR,HK,HKG,0,HKG,532
+171,Hungría,Hungary,HU,HUN,0,HUN,944
+172,India,India,IN,IND,0,IND,534
+173,Indonesia,Indonesia,ID,IDN,0,IDN,536
+174,Ingreso bajo (Monitor Fiscal),Low Income,,,1,FAD_LIC,
+175,Irak,Iraq,IQ,IRQ,0,IRQ,433
+176,Irán,Iran,IR,IRN,0,IRN,429
+177,Irlanda,Ireland,IE,IRL,0,IRL,178
+178,Isla de Man,Isle of Man,,,0,IMY,
+179,Islandia,Iceland,IS,ISL,0,ISL,176
+180,Islas Caimán,Cayman Islands,KY,CYM,0,CYM,
+181,Islas Cook,Cook Islands,CK,COK,0,COK,
+182,Islas del Canal,Channel Islands,,,0,CHI,
+183,Islas del Pacífico,Pacific Islands,,,1,PIQ,
+184,Islas Feroe,Faeroe Islands,FO,FRO,0,FRO,
+185,Islas Malvinas,Falkland Islands,FK,FLK,0,FLK,
+186,Islas Marianas del Norte,Northern Mariana Islands,MP,MNP,0,MNP,
+187,Islas Marshall,Marshall Islands,MH,MHL,0,MHL,867
+188,Islas Salomón,Solomon Islands,SB,SLB,0,SLB,813
+189,Islas Turcas y Caicos,Turks and Caicos Islands,TC,TCA,0,TCA,
+190,Islas Vírgenes Británicas,British Virgin Islands,VG,VGB,0,VGB,
+191,Islas Vírgenes de los Estados Unidos,United States Virgin Islands,VI,VIR,0,VIR,
+192,Israel,Israel,IL,ISR,0,ISR,436
+193,Italia,Italy,IT,ITA,0,ITA,136
+194,Jamaica,Jamaica,JM,JAM,0,JAM,343
+195,Japón,Japan,JP,JPN,0,JPN,158
+196,Jordania,Jordan,JO,JOR,0,JOR,439
+197,Kazajistán,Kazakhstan,KZ,KAZ,0,KAZ,916
+198,Kenia,Kenya,KE,KEN,0,KEN,664
+199,Kirguistán,Kyrgyz Republic,KG,KGZ,0,KGZ,917
+200,Kiribati,Kiribati,KI,KIR,0,KIR,826
+201,Kosovo,Kosovo,,,0,UVK,967
+202,Kuwait,Kuwait,KW,KWT,0,KWT,443
+203,Laos,Lao P.D.R.,LA,LAO,0,LAO,544
+204,Lesoto,Lesotho,LS,LSO,0,LSO,666
+205,Letonia,Latvia,LV,LVA,0,LVA,941
+206,Líbano,Lebanon,LB,LBN,0,LBN,446
+207,Liberia,Liberia,LR,LBR,0,LBR,668
+208,Libia,Libya,LY,LBY,0,LBY,672
+209,Liechtenstein,Liechtenstein,LI,LIE,0,LIE,
+210,Lituania,Lithuania,LT,LTU,0,LTU,946
+211,Luxemburgo,Luxembourg,LU,LUX,0,LUX,137
+212,Macao (RAE),Macao SAR,MO,MAC,0,MAC,546
+213,Macedonia del Norte,North Macedonia,MK,MKD,0,MKD,962
+214,Madagascar,Madagascar,MG,MDG,0,MDG,674
+215,Malasia,Malaysia,MY,MYS,0,MYS,548
+216,Malaui,Malawi,MW,MWI,0,MWI,676
+217,Maldivas,Maldives,MV,MDV,0,MDV,556
+218,Malí,Mali,ML,MLI,0,MLI,678
+219,Malta,Malta,MT,MLT,0,MLT,181
+220,Marruecos,Morocco,MA,MAR,0,MAR,686
+221,Martinica,Martinique,MQ,MTQ,0,MTQ,
+222,Mauricio,Mauritius,MU,MUS,0,MUS,684
+223,Mauritania,Mauritania,MR,MRT,0,MRT,682
+224,Mayotte,Mayotte,YT,MYT,0,MYT,
+225,Mercados emergentes (Monitor Fiscal),Emerging Market,,,1,FAD_EME,
+226,Mercados emergentes (SPR),Emerging Markets,,,1,SPR_GD_EM,
+227,México,Mexico,MX,MEX,0,MEX,273
+228,Micronesia,"Micronesia, Fed. States of",FM,FSM,0,FSM,868
+229,Moldavia,Moldova,MD,MDA,0,MDA,921
+230,Mónaco,Monaco,MC,MCO,0,MCO,
+231,Mongolia,Mongolia,MN,MNG,0,MNG,948
+232,Montenegro,Montenegro,ME,MNE,0,MNE,943
+233,Montserrat,Montserrat,MS,MSR,0,MSR,
+234,Mozambique,Mozambique,MZ,MOZ,0,MOZ,688
+235,Mundo,World,,,1,WEOWORLD,1
+236,Mundo (ARA),World,,,1,ARAWORLD,
+237,Mundo (balanza de pagos),World,,,1,BOPWORLD,
+238,Mundo (CC),World,,,1,CCWORLD,
+239,Mundo (Deuda Global),World,,,1,GDWORLD,
+240,"Mundo (Fiscal Monitor, CF)",World,,,1,CFWORLD,
+241,Mundo (Monitor Fiscal),World,,,1,FAD_WORLD,
+242,Myanmar,Myanmar,MM,MMR,0,MMR,518
+243,Namibia,Namibia,NA,NAM,0,NAM,728
+244,Nauru,Naoero,NR,NRU,0,NRU,836
+245,Nepal,Nepal,NP,NPL,0,NPL,558
+246,Nicaragua,Nicaragua,NI,NIC,0,NIC,278
+247,Níger,Niger,NE,NER,0,NER,692
+248,Nigeria,Nigeria,NG,NGA,0,NGA,694
+249,Niue,Niue,NU,NIU,0,NIU,
+250,No G-20 (Monitor Fiscal),Non G-20,,,1,FAD_NG20,
+251,No G-7 (Monitor Fiscal),None G-7,,,1,FAD_NG7,
+252,No petroleros,Non-oil,,,1,NO824,
+253,No petroleros de crecimiento lento,Non-Oil Slow,,,1,FAD_NOSLOW,
+254,No petroleros de crecimiento medio,Non-Oil Medium,,,1,FAD_NOMED,
+255,No petroleros de crecimiento rápido,Non-Oil Fast,,,1,FAD_NOFAST,
+256,No petroleros de ingreso alto,Non-Oil High Income,,,1,FAD_NOHIC,
+257,No petroleros de ingreso bajo,Non-Oil Low Income,,,1,FAD_NOLIC,
+258,No petroleros de ingreso medio,Non-Oil Middle Income,,,1,FAD_NOMIC,
+259,No Unión Europea (reglas y consejos fiscales),Non European Union,,,1,FR_FC_NonEU,
+260,Norte de África,North Africa,,,1,NAQ,
+261,Noruega,Norway,NO,NOR,0,NOR,142
+262,Nueva Caledonia,New Caledonia,NC,NCL,0,NCL,
+263,Nueva Zelanda,New Zealand,NZ,NZL,0,NZL,196
+264,Omán,Oman,OM,OMN,0,OMN,449
+265,Organismos internacionales,International Organizations,,,1,IIO,
+266,Oriente Medio (analítico),Middle East (Analytical),,,1,ME,
+267,Oriente Medio (región),Middle East (Region),,,1,MEQ,
+268,Oriente Medio y Asia Central,Middle East and Central Asia,,,1,MECA,400
+269,Oriente Medio y Asia Central (SPR),Middle East and Central Asia,,,1,SPR_GD_MECA,
+270,Oriente Medio y Norte de África,Middle East and North Africa,,,1,MENA,
+271,"Oriente Medio, Norte de África y Pakistán emergentes y de ingreso medio",Emerging and Middle-Income Middle East and North Africa and Pakistan,,,1,FM_EMEME,
+272,"Oriente Medio, Norte de África, Afganistán y Pakistán","Middle East, North Africa, Afghanistan, and Pakistan",,,1,MENAP,
+273,Otras avanzadas (Monitor Fiscal),Other Advanced,,,1,FAD_OtherAdv,
+274,Otras economías avanzadas,Other advanced economies,,,1,OAE,123
+275,Otros grupos,Other Groups,,,1,OTH,
+276,Otros países en desarrollo de ingreso bajo,Low-Income Developing Others,,,1,FM_LICO,
+277,Países Bajos,Netherlands,NL,NLD,0,NLD,138
+278,Países con tipo de cambio fijo convencional,Countries with conventional exchange rate pegs,,,1,FXERRC,
+279,Países de ingreso alto (mediana),High Income Countries (median),,,1,SPR_HIC,
+280,Países de ingreso bajo,Low-income countries,,,1,LIC,
+281,Países de ingreso bajo (Monitor Fiscal),Low-Income Countries,,,1,FM_LIC,
+282,Países de ingreso bajo excl. los frágiles y afectados por conflictos,LICs excluding low income countries in fragile and conflict-affected situations,,,1,LICXF,
+283,Países de ingreso medio,Middle-income countries,,,1,MIC,
+284,Países de ingreso medio excl. Nigeria y Sudáfrica,MICs excluding Nigeria and South Africa,,,1,MIC854,
+285,Países de la MDRI,MDRI countries,,,1,MDRI,
+286,Países elegibles para el SCLP (PRGF),Countries eligible for PRGF,,,1,PRGF,
+287,Países emergentes y en desarrollo (Monitor Fiscal),Emerging and Developing Countries,,,1,FAD_EMD,
+288,Países en desarrollo de ingreso bajo,Low-Income Developing Countries,,,1,FM_LIDC,
+289,Países en desarrollo de ingreso bajo (mediana),Low-Income Developing Countries (median),,,1,SPR_LIDC,
+290,Países en desarrollo de ingreso bajo (SPR),Low Income Developing Countries,,,1,SPR_GD_LIDC,
+291,Países en desarrollo de ingreso bajo de frontera (mediana),Frontier LIDCs (median),,,1,SPR_FLIDC,
+292,Países en situación frágil y afectados por conflictos,Countries in fragile and conflict-affected situations,,,1,FRC,
+293,Países exportadores de petróleo,Oil-exporting countries,,,1,OEXP,
+294,Países exportadores de petróleo excl. Nigeria,Oil-exporting countries excluding Nigeria,,,1,OXEN853,
+295,Países importadores de petróleo,Oil-importing countries,,,1,OIMP,
+296,Países importadores de petróleo excl. Sudáfrica,Oil-importing countries excluding South Africa,,,1,OIM808,
+297,Países intensivos en recursos,Resource-intensive countries,,,1,RESINT,
+298,Países no intensivos en recursos,Non-resource-intensive countires,,,1,NONRESINT,
+299,Países sin litoral,Landlocked,,,1,LL,
+300,Países sin tipo de cambio fijo convencional,Countries without conventional exchange rate pegs,,,1,FLERRC,
+301,Pakistán,Pakistan,PK,PAK,0,PAK,564
+302,Palaos,Palau,PW,PLW,0,PLW,565
+303,Panamá,Panama,PA,PAN,0,PAN,283
+304,Papúa Nueva Guinea,Papua New Guinea,PG,PNG,0,PNG,853
+305,Paraguay,Paraguay,PY,PRY,0,PRY,288
+306,Perspectivas Económicas Regionales: África,African Regional Economic Outlook,,,1,AFRREO,
+307,Perú,Peru,PE,PER,0,PER,293
+308,Pitcairn,Pitcairn,PN,PCN,0,PCN,
+309,Polinesia Francesa,French Polynesia,PF,PYF,0,PYF,
+310,Polonia,Poland,PL,POL,0,POL,964
+311,Portugal,Portugal,PT,PRT,0,PRT,182
+312,Presupuesto con perspectiva de género: otros países,Other countries,,,1,gb_othersource,
+313,Presupuesto con perspectiva de género: otros países relevados,Other gender budgeting countries covered in the surveys,,,1,gbtier_2,
+314,Presupuesto con perspectiva de género: países destacados,Prominent gender budgeting countries covered in the surveys,,,1,gbtier_1,
+315,Presupuesto con perspectiva de género: países en encuestas regionales,Identified as gender budgeting country in IMF regional survey,,,1,gbcasestudy,
+316,Principales economías avanzadas (G7),Major advanced economies (G7),,,1,MAE,119
+317,Productores de petróleo (Monitor Fiscal),Oil Producers,,,1,FAD_OP,
+318,Productores de petróleo en desarrollo de ingreso bajo,Low-Income Developing Oil Producers,,,1,FM_LICOP,
+319,Puerto Rico,Puerto Rico,PR,PRI,0,PRI,359
+320,Reino Unido,United Kingdom,GB,GBR,0,GBR,112
+321,República Centroafricana,Central African Republic,CF,CAF,0,CAF,626
+322,República Dominicana,Dominican Republic,DO,DOM,0,DOM,243
+323,Resto (Monitor Fiscal),Rest,,,1,FAD_Rest,
+324,Reunión,Reunion,RE,REU,0,REU,
+325,Ruanda,Rwanda,RW,RWA,0,RWA,714
+326,Rumanía,Romania,RO,ROU,0,ROU,968
+327,Rusia,Russian Federation,RU,RUS,0,RUS,922
+328,SACU,SACU,,,1,SACU,
+329,SADC,SADC,,,1,SADC,
+330,Sahara Occidental,Western Sahara,EH,ESH,0,ESH,
+331,Samoa,Samoa,WS,WSM,0,WSM,862
+332,Samoa Estadounidense,American Samoa,AS,ASM,0,ASM,
+333,San Cristóbal y Nieves,Saint Kitts and Nevis,KN,KNA,0,KNA,361
+334,San Marino,San Marino,SM,SMR,0,SMR,135
+335,San Martín (Francia),Saint Martin,,,0,MFX,
+336,San Martín (Países Bajos),Sint Maarten,SX,SXM,0,SXM,
+337,San Pedro y Miquelon,Saint-Pierre and Miquelon,PM,SPM,0,SPM,
+338,San Vicente y las Granadinas,Saint Vincent and the Grenadines,VC,VCT,0,VCT,364
+339,Santa Elena,Saint Helena,SH,SHN,0,SHN,
+340,Santa Lucía,Saint Lucia,LC,LCA,0,LCA,362
+341,Santa Sede,Holy See,VA,VAT,0,VAT,
+342,Santo Tomé y Príncipe,São Tomé and Príncipe,ST,STP,0,STP,716
+343,Senegal,Senegal,SN,SEN,0,SEN,722
+344,Serbia,Serbia,RS,SRB,0,SRB,942
+345,Seychelles,Seychelles,SC,SYC,0,SYC,718
+346,Sierra Leona,Sierra Leone,SL,SLE,0,SLE,724
+347,Singapur,Singapore,SG,SGP,0,SGP,576
+348,Siria,Syria,SY,SYR,0,SYR,463
+349,Somalia,Somalia,SO,SOM,0,SOM,726
+350,Sri Lanka,Sri Lanka,LK,LKA,0,LKA,524
+351,Sudáfrica,South Africa,ZA,ZAF,0,ZAF,199
+352,Sudán,Sudan,SD,SDN,0,SDN,732
+353,Sudán del Sur,"South Sudan, Republic of",SS,SSD,0,SSD,733
+354,Sudeste Asiático,Southeast Asia,,,1,SEQ,
+355,Suecia,Sweden,SE,SWE,0,SWE,144
+356,Suiza,Switzerland,CH,CHE,0,CHE,146
+357,Surinam,Suriname,SR,SUR,0,SUR,366
+358,Svalbard y Jan Mayen,Svalbard and Jan Mayen Islands,SJ,SJM,0,SJM,
+359,Tailandia,Thailand,TH,THA,0,THA,578
+360,Taiwán,Taiwan Province of China,TW,TWN,0,TWN,528
+361,Tanzania,Tanzania,TZ,TZA,0,TZA,738
+362,Tayikistán,Tajikistan,TJ,TJK,0,TJK,923
+363,Territorio Británico del Océano Índico,British Indian Ocean Territories,IO,IOT,0,IOT,
+364,Timor Oriental,Timor-Leste,TL,TLS,0,TLS,537
+365,Todos los países (Deuda Global),All countries - Global Debt,,,1,FADGDWORLD,
+366,Todos los países (reglas y consejos fiscales),All countries - Fiscal Rules & Fiscal Councils,,,1,FR_FCWORLD,
+367,Togo,Togo,TG,TGO,0,TGO,742
+368,Tokelau,Tokelau,TK,TKL,0,TKL,
+369,Tonga,Tonga,TO,TON,0,TON,866
+370,Trinidad y Tobago,Trinidad and Tobago,TT,TTO,0,TTO,369
+371,Túnez,Tunisia,TN,TUN,0,TUN,744
+372,Turkmenistán,Turkmenistan,TM,TKM,0,TKM,925
+373,Turquía,"Türkiye, Republic of",TR,TUR,0,TUR,186
+374,Tuvalu,Tuvalu,TV,TUV,0,TUV,869
+375,Ucrania,Ukraine,UA,UKR,0,UKR,926
+376,UEMAO,WAEMU,,,1,WAEMU,
+377,Uganda,Uganda,UG,UGA,0,UGA,746
+378,Unión Europea,European Union,,,1,EU,998
+379,Unión Europea (reglas y consejos fiscales),European Union,,,1,FR_FC_EU,
+380,Unión Monetaria del Caribe Oriental,Eastern Caribbean Currency Union,,,1,ECCU,
+381,Uruguay,Uruguay,UY,URY,0,URY,298
+382,Uzbekistán,Uzbekistan,UZ,UZB,0,UZB,927
+383,Vanuatu,Vanuatu,VU,VUT,0,VUT,846
+384,Venezuela,Venezuela,VE,VEN,0,VEN,299
+385,Vietnam,Vietnam,VN,VNM,0,VNM,582
+386,Wallis y Futuna,Wallis and Futuna Islands,WF,WLF,0,WLF,
+387,Yemen,Yemen,YE,YEM,0,YEM,474
+388,Yibuti,Djibouti,DJ,DJI,0,DJI,611
+389,Zambia,Zambia,ZM,ZMB,0,ZMB,754
+390,Zimbabue,Zimbabwe,ZW,ZWE,0,ZWE,698
+391,Zona del franco CFA,CFA Franc Zone,,,1,CFAFZ,
+392,Zona euro,Euro area,,,1,EURO,163
+393,Zona euro (grupo alternativo),Euro area,,,1,EUROAREA,
+394,Zona euro (Monitor Fiscal),Euro Area,,,1,FAD_EuroArea,

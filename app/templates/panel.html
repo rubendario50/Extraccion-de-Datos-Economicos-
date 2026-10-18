@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+{% block titulo %}Panel · Datos Económicos{% endblock %}
+{% block clase_body %}pagina-panel{% endblock %}
+{% block cabeza %}
+  <script src="/static/vendor/echarts.min.js?v=5.5.1" defer></script>
+  <script src="/static/js/panel.js?v={{ version }}" defer></script>
+{% endblock %}
+{% block cuerpo %}
+<header class="barra">
+  <a class="marca" href="/">Datos Económicos</a>
+  <div class="barra-usuario">
+    <span class="barra-nombre">{{ usuario.nombre }}</span>
+    <form method="post" action="/salir">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <button type="submit" class="boton boton-barra">Salir</button>
+    </form>
+  </div>
+</header>
+
+<main id="contenido" class="panel">
+  <form class="filtros" id="filtros" novalidate>
+    <div class="campo campo-indicador">
+      <label for="indicador">Indicador</label>
+      <select id="indicador" name="indicador">
+        {% for ind in datos.indicadores %}<option value="{{ ind.codigo }}">{{ ind.nombre }}</option>{% endfor %}
+      </select>
+    </div>
+
+    <div class="campo campo-paises">
+      <label for="buscar-pais" id="etiqueta-paises">Países y regiones</label>
+      <div class="selector-paises" id="selector-paises">
+        <ul class="fichas" id="fichas" aria-label="Países elegidos"></ul>
+        <div class="buscador">
+          <input id="buscar-pais" type="text" role="combobox" autocomplete="off" spellcheck="false"
+                 aria-autocomplete="list" aria-expanded="false" aria-controls="opciones-paises"
+                 aria-describedby="ayuda-paises" placeholder="Buscar y agregar…">
+          <ul class="opciones" id="opciones-paises" role="listbox" aria-labelledby="etiqueta-paises" hidden></ul>
+        </div>
+      </div>
+      <p class="ayuda" id="ayuda-paises">Hasta 8 a la vez.</p>
+    </div>
+
+    <div class="grupo-anios">
+      <div class="campo campo-anio">
+        <label for="desde">Desde</label>
+        <select id="desde" name="desde" aria-describedby="error-anios"></select>
+      </div>
+      <div class="campo campo-anio">
+        <label for="hasta">Hasta</label>
+        <select id="hasta" name="hasta" aria-describedby="error-anios"></select>
+      </div>
+    </div>
+
+    <fieldset class="campo campo-base">
+      <legend>Comparación</legend>
+      <div class="base-fila">
+        <label class="casilla" for="usar-base">
+          <input type="checkbox" id="usar-base" name="usar_base">
+          Índice base 100
+        </label>
+        <label class="oculto-visual" for="anio-base">Año base</label>
+        <select id="anio-base" name="base" disabled aria-describedby="ayuda-base"></select>
+      </div>
+      <p class="ayuda" id="ayuda-base">Cada serie vale 100 en el año base.</p>
+    </fieldset>
+    <p class="error-campo error-anios" id="error-anios" hidden></p>
+  </form>
+
+  <section class="resultado" aria-labelledby="titulo-serie">
+    <div class="resultado-cabeza">
+      <h1 id="titulo-serie">{{ datos.indicadores[0].nombre if datos.indicadores else "Sin indicadores" }}</h1>
+      <p class="unidad" id="unidad-serie"></p>
+      <p class="ayuda" id="nota-faltantes" hidden></p>
+    </div>
+    <ul class="leyenda" id="leyenda" aria-label="Series de la gráfica (tocá una para ocultarla o mostrarla)"></ul>
+    <div class="grafica-marco">
+      <div class="grafica" id="grafica" role="img" aria-label="Gráfica de líneas de la serie elegida"></div>
+      <div class="estado" id="estado" role="status" aria-live="polite" hidden>
+        <p class="estado-titulo" id="estado-titulo"></p>
+        <p class="estado-texto" id="estado-texto"></p>
+        <button type="button" class="boton boton-secundario" id="reintentar" hidden>Reintentar</button>
+      </div>
+    </div>
+    <p class="fuente">Fuente: {{ datos.fuente }}</p>
+
+    <div class="tabla-cabeza">
+      <h2 id="titulo-tabla">Valores</h2>
+      <p class="ayuda" id="nota-tabla"></p>
+    </div>
+    <div class="tabla-marco" tabindex="0" role="region" aria-labelledby="titulo-tabla">
+      <table class="tabla" id="tabla">
+        <thead></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+</main>
+<script type="application/json" id="datos-panel">{{ datos_json|safe }}</script>
+{% endblock %}

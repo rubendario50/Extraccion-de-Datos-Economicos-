@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block clase_body %}pagina-acceso{% endblock %}
+{% block cuerpo %}
+<main id="contenido" class="acceso">
+  <div class="acceso-marca">
+    <span class="marca">Datos Económicos</span>
+    <p class="acceso-lema">Series del FMI y de Uruguay para comparar países, años e índices.</p>
+  </div>
+  <div class="acceso-hoja">
+    {% block hoja %}{% endblock %}
+  </div>
+</main>
+{% endblock %}

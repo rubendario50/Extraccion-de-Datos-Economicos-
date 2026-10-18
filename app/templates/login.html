@@ -1,0 +1,22 @@
+{% extends "acceso.html" %}
+{% block titulo %}Ingresar · Datos Económicos{% endblock %}
+{% block hoja %}
+<h1>Ingresar</h1>
+{% include "_mensajes.html" %}
+<form method="post" action="/login" class="formulario" novalidate>
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <div class="campo">
+    <label for="email">Email</label>
+    <input id="email" name="email" type="email" autocomplete="username" inputmode="email" required
+           value="{{ email }}" {% if error %}aria-describedby="error-formulario" aria-invalid="true"{% endif %} autofocus>
+  </div>
+  <div class="campo">
+    <label for="password">Contraseña</label>
+    <input id="password" name="password" type="password" autocomplete="current-password" required
+           {% if error %}aria-describedby="error-formulario" aria-invalid="true"{% endif %}>
+  </div>
+  <button type="submit" class="boton boton-principal">Ingresar</button>
+</form>
+{% include "_google.html" %}
+<p class="pie-formulario">¿No tenés cuenta? <a href="/registro">Creá una</a></p>
+{% endblock %}

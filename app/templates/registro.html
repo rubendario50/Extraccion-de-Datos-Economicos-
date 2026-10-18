@@ -1,0 +1,31 @@
+{% extends "acceso.html" %}
+{% block titulo %}Crear cuenta · Datos Económicos{% endblock %}
+{% macro campo(id, etiqueta, tipo, autocompletar, ayuda=None, valor="") %}
+  <div class="campo">
+    <label for="{{ id }}">{{ etiqueta }}</label>
+    {% set descr = [] %}
+    {% if ayuda %}{% set _ = descr.append("ayuda-" ~ id) %}{% endif %}
+    {% if errores.get(id) %}{% set _ = descr.append("error-" ~ id) %}{% endif %}
+    <input id="{{ id }}" name="{{ id }}" type="{{ tipo }}" autocomplete="{{ autocompletar }}" required
+           {% if tipo != "password" %}value="{{ valor }}"{% endif %}
+           {% if tipo == "password" %}minlength="12"{% endif %}
+           {% if descr %}aria-describedby="{{ descr|join(' ') }}"{% endif %}
+           {% if errores.get(id) %}aria-invalid="true"{% endif %}>
+    {% if ayuda %}<p class="ayuda" id="ayuda-{{ id }}">{{ ayuda }}</p>{% endif %}
+    {% if errores.get(id) %}<p class="error-campo" id="error-{{ id }}">{{ errores[id] }}</p>{% endif %}
+  </div>
+{% endmacro %}
+{% block hoja %}
+<h1>Crear cuenta</h1>
+{% if errores %}<p class="alerta" role="alert">Revisá los campos marcados.</p>{% endif %}
+<form method="post" action="/registro" class="formulario" novalidate>
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  {{ campo("nombre", "Nombre", "text", "name", valor=datos.get("nombre", "")) }}
+  {{ campo("email", "Email", "email", "email", valor=datos.get("email", "")) }}
+  {{ campo("password", "Contraseña", "password", "new-password", ayuda="Al menos 12 caracteres. Una frase de varias palabras es fácil de recordar y difícil de adivinar.") }}
+  {{ campo("confirmacion", "Repetí la contraseña", "password", "new-password") }}
+  <button type="submit" class="boton boton-principal">Crear cuenta</button>
+</form>
+{% include "_google.html" %}
+<p class="pie-formulario">¿Ya tenés cuenta? <a href="/login">Ingresá</a></p>
+{% endblock %}

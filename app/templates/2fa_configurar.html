@@ -1,0 +1,32 @@
+{% extends "acceso.html" %}
+{% block titulo %}Configurar el doble factor · Datos Económicos{% endblock %}
+{% block hoja %}
+<h1>Configurá el doble factor</h1>
+<p class="intro">Para entrar vas a necesitar, además de la contraseña, un código de 6 dígitos que genera una app en tu celular.</p>
+{% include "_mensajes.html" %}
+<ol class="pasos">
+  <li>
+    <p>Abrí Google Authenticator, Authy o una app similar y escaneá este código.</p>
+    <div class="qr-marco">{{ qr }}</div>
+    <details class="clave-manual">
+      <summary>No puedo escanearlo</summary>
+      <p>Agregá una cuenta a mano con esta clave (tipo «basada en el tiempo»):</p>
+      <p class="clave" translate="no">{{ clave }}</p>
+      <p class="ayuda">Cuenta: {{ usuario.email }}</p>
+    </details>
+  </li>
+  <li>
+    <form method="post" action="/2fa/configurar" class="formulario" novalidate>
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <div class="campo">
+        <label for="codigo">Escribí el código que muestra la app</label>
+        <input id="codigo" name="codigo" class="entrada-codigo" type="text" inputmode="numeric" pattern="[0-9 ]*"
+               autocomplete="one-time-code" maxlength="7" required
+               {% if error %}aria-describedby="error-formulario" aria-invalid="true"{% endif %}>
+      </div>
+      <button type="submit" class="boton boton-principal">Activar</button>
+    </form>
+  </li>
+</ol>
+{% include "_salir_discreto.html" %}
+{% endblock %}

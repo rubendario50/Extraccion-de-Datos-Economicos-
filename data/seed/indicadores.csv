@@ -1,0 +1,3 @@
+codigo,nombre,unidad,escala,alcance,frecuencia,descripcion,fuente,codigo_externo
+PBI_USD_CORR,"PBI, precios corrientes",Dólares estadounidenses corrientes,Miles de millones,internacional,anual,Producto bruto interno a precios corrientes en dólares (WEO).,FMI_DM,NGDPD
+PBI_CRECIMIENTO,"PBI, crecimiento real",Variación porcentual anual,Unidades,internacional,anual,Variación anual del PBI a precios constantes (WEO).,FMI_DM,NGDP_RPCH

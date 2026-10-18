@@ -1,0 +1,39 @@
+[project]
+name = "extraccion-datos-economicos"
+version = "0.1.0"
+description = "Recopilación, análisis y difusión de datos económicos internacionales y de Uruguay."
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi",
+    "uvicorn[standard]",
+    "sqlalchemy>=2",
+    "psycopg[binary]",
+    "alembic",
+    "jinja2",
+    "python-multipart",
+    "pydantic-settings",
+    "httpx",
+    "argon2-cffi",
+    "pyotp",
+    "segno",
+    "authlib",
+    "cryptography",
+    "itsdangerous",
+    "pycountry",
+]
+
+[project.optional-dependencies]
+dev = ["pytest"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["app*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# Aviso de Starlette sobre su cliente de tests; no depende de este proyecto.
+filterwarnings = ["ignore:Using `httpx` with `starlette.testclient` is deprecated"]
