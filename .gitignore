@@ -1,0 +1,22 @@
+# Entornos y dependencias
+.venv/
+venv/
+__pycache__/
+*.pyc
+node_modules/
+
+# Configuración local y secretos
+.env
+.env.*
+!.env.example
+
+# Datos generados
+data/raw/
+*.sqlite
+*.db
+
+# Editor y sistema
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
