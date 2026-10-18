@@ -12,6 +12,8 @@
   const el = {
     filtros: $("filtros"),
     indicador: $("indicador"),
+    fuente: $("fuente"),
+    nombreFuente: $("fuente-serie"),
     selector: $("selector-paises"),
     fichas: $("fichas"),
     buscar: $("buscar-pais"),
@@ -59,6 +61,7 @@
 
   const estado = {
     indicador: datos.indicadores.length ? datos.indicadores[0].codigo : "",
+    fuente: null,
     paises: [],
     desde: null,
     hasta: null,
@@ -82,9 +85,39 @@
     return porCodigoIndicador.get(estado.indicador);
   }
 
+  // Fuente elegida del indicador actual: años y países con datos de esa fuente.
+  function fuenteActual() {
+    const ind = indicadorActual();
+    if (!ind) return null;
+    return ind.fuentes.find((f) => f.codigo === estado.fuente) || null;
+  }
+
+  // Arma el selector de fuentes del indicador. Conserva la elegida si el indicador la tiene;
+  // si no, usa la fuente por defecto (la primera con datos).
+  function prepararFuentes() {
+    const ind = indicadorActual();
+    el.fuente.replaceChildren();
+    if (!ind || !ind.fuentes.length) {
+      estado.fuente = null;
+      el.fuente.disabled = true;
+      return;
+    }
+    if (!ind.fuentes.some((f) => f.codigo === estado.fuente)) estado.fuente = ind.fuente || ind.fuentes[0].codigo;
+    for (const f of ind.fuentes) {
+      const o = document.createElement("option");
+      o.value = f.codigo;
+      o.textContent = f.desde == null ? `${f.nombre} (sin datos)` : f.nombre;
+      if (f.codigo === estado.fuente) o.selected = true;
+      el.fuente.append(o);
+    }
+    el.fuente.disabled = ind.fuentes.length < 2;
+    el.nombreFuente.textContent = `Fuente: ${fuenteActual().nombre}`;
+  }
+
   function leerUrl() {
     const q = new URLSearchParams(location.search);
     if (porCodigoIndicador.has(q.get("indicador"))) estado.indicador = q.get("indicador");
+    if (q.get("fuente")) estado.fuente = q.get("fuente");
     const paises = (q.get("paises") || "").split(",").filter((c) => porCodigoPais.has(c));
     estado.paises = (paises.length ? paises : datos.por_defecto.filter((c) => porCodigoPais.has(c))).slice(0, MAX_SERIES);
     estado.paises.forEach(asignarRanura);
@@ -98,6 +131,7 @@
   function escribirUrl() {
     const q = new URLSearchParams();
     q.set("indicador", estado.indicador);
+    if (estado.fuente) q.set("fuente", estado.fuente);
     q.set("paises", estado.paises.join(","));
     if (estado.desde != null) q.set("desde", estado.desde);
     if (estado.hasta != null) q.set("hasta", estado.hasta);
@@ -121,7 +155,7 @@
   const acotar = (v, min, max) => Math.min(Math.max(v, min), max);
 
   function prepararAnios() {
-    const ind = indicadorActual();
+    const ind = fuenteActual();
     if (!ind || ind.desde == null) {
       [el.desde, el.hasta, el.anioBase].forEach((s) => { s.replaceChildren(); s.disabled = true; });
       return;
@@ -171,8 +205,8 @@
   let resultados = [];
 
   function buscarPaises(texto) {
-    const ind = indicadorActual();
-    const conDatos = new Set(ind ? ind.paises : []);
+    const fte = fuenteActual();
+    const conDatos = new Set(fte ? fte.paises : []);
     const q = sinTildes(texto.trim());
     const elegidos = new Set(estado.paises);
     const lista = datos.paises.filter((p) => conDatos.has(p.codigo) && !elegidos.has(p.codigo));
@@ -287,6 +321,13 @@
   el.filtros.addEventListener("submit", (e) => e.preventDefault());
   el.indicador.addEventListener("change", () => {
     estado.indicador = el.indicador.value;
+    prepararFuentes();
+    prepararAnios();
+    pedirSeries();
+  });
+  el.fuente.addEventListener("change", () => {
+    estado.fuente = el.fuente.value;
+    el.nombreFuente.textContent = `Fuente: ${fuenteActual().nombre}`;
     prepararAnios();
     pedirSeries();
   });
@@ -341,7 +382,7 @@
     el.titulo.textContent = ind ? ind.nombre : "Sin indicadores";
     el.faltantes.hidden = true;
     if (!ind) {
-      mostrarEstado("vacio", "Todavía no hay indicadores cargados", "Cargá las semillas y los datos del FMI para empezar.");
+      mostrarEstado("vacio", "Todavía no hay indicadores cargados", "Cargá las semillas y los datos del FMI y del Banco Mundial para empezar.");
       return;
     }
     if (!estado.paises.length) {
@@ -361,6 +402,7 @@
     const control = new AbortController();
     pedidoEnCurso = control;
     const q = new URLSearchParams({ indicador: estado.indicador, paises: estado.paises.join(",") });
+    if (estado.fuente) q.set("fuente", estado.fuente);
     if (estado.desde != null) q.set("desde", estado.desde);
     if (estado.hasta != null) q.set("hasta", estado.hasta);
     if (estado.usarBase && estado.base != null) q.set("base", estado.base);
@@ -429,6 +471,10 @@
       .join(" · ");
   }
 
+  function nombreCorto(fuente) {
+    return { FMI_DM: "El FMI", BM: "El Banco Mundial" }[fuente] || "La fuente";
+  }
+
   function pintar(cuerpo) {
     const series = cuerpo.series;
     elegirFormato(series);
@@ -447,7 +493,7 @@
       mostrarEstado(
         "vacio",
         "No hay datos en ese rango",
-        `El FMI no publica ${cuerpo.indicador.nombre.toLowerCase()} para ${series.map((s) => s.nombre).join(", ")} entre ${estado.desde} y ${estado.hasta}. Probá con otros años.`
+        `${nombreCorto(cuerpo.fuente)} no publica ${cuerpo.indicador.nombre.toLowerCase()} para ${series.map((s) => s.nombre).join(", ")} entre ${estado.desde} y ${estado.hasta}. Probá con otros años.`
       );
       vaciarTabla("Sin datos para mostrar.");
       return;
@@ -643,6 +689,7 @@
 
   leerUrl();
   el.indicador.value = estado.indicador;
+  prepararFuentes();
   prepararAnios();
   pintarFichas();
 

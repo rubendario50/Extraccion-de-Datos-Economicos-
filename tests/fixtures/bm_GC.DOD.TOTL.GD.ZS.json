@@ -1,0 +1,66 @@
+[
+ {
+  "indicator": {
+   "id": "GC.DOD.TOTL.GD.ZS",
+   "value": "Central government debt, total (% of GDP)"
+  },
+  "country": {
+   "id": "AR",
+   "value": "Argentina"
+  },
+  "countryiso3code": "ARG",
+  "date": "2020",
+  "value": null,
+  "unit": "",
+  "obs_status": "",
+  "decimal": 0
+ },
+ {
+  "indicator": {
+   "id": "GC.DOD.TOTL.GD.ZS",
+   "value": "Central government debt, total (% of GDP)"
+  },
+  "country": {
+   "id": "AR",
+   "value": "Argentina"
+  },
+  "countryiso3code": "ARG",
+  "date": "2010",
+  "value": null,
+  "unit": "",
+  "obs_status": "",
+  "decimal": 0
+ },
+ {
+  "indicator": {
+   "id": "GC.DOD.TOTL.GD.ZS",
+   "value": "Central government debt, total (% of GDP)"
+  },
+  "country": {
+   "id": "UY",
+   "value": "Uruguay"
+  },
+  "countryiso3code": "URY",
+  "date": "2020",
+  "value": 60.4014234820884,
+  "unit": "",
+  "obs_status": "",
+  "decimal": 0
+ },
+ {
+  "indicator": {
+   "id": "GC.DOD.TOTL.GD.ZS",
+   "value": "Central government debt, total (% of GDP)"
+  },
+  "country": {
+   "id": "UY",
+   "value": "Uruguay"
+  },
+  "countryiso3code": "URY",
+  "date": "2010",
+  "value": 42.4666388141691,
+  "unit": "",
+  "obs_status": "",
+  "decimal": 0
+ }
+]

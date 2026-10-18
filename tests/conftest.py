@@ -63,6 +63,45 @@ def cliente_fmi():
         yield c
 
 
+def transporte_bm(llamadas: list | None = None, filas: dict[str, list] | None = None) -> httpx.MockTransport:
+    """Simula la API del Banco Mundial con tests/fixtures/bm_<CODIGO>.json (o con `filas`, si se pasa).
+
+    Respeta `per_page` y `page` como la API real: [metadatos, filas de la página].
+    """
+
+    def responder(pedido: httpx.Request) -> httpx.Response:
+        if llamadas is not None:
+            llamadas.append(f"{pedido.url.path}?{pedido.url.query.decode()}")
+        ruta = pedido.url.path
+        if ruta.endswith("/country"):
+            nombre = "paises"
+        elif "/indicator/" in ruta:
+            nombre = ruta.rsplit("/", 1)[-1]
+        else:
+            return httpx.Response(404)
+        if filas is not None and nombre in filas:
+            todas = filas[nombre]
+        else:
+            archivo = FIXTURES / f"bm_{nombre}.json"
+            if not archivo.exists():
+                # Así responde el BM a un indicador inexistente: HTTP 200 con un mensaje de error.
+                return httpx.Response(200, json=[{"message": [{"id": "120", "key": "Invalid value", "value": "The provided parameter value is not valid"}]}])
+            todas = json.loads(archivo.read_text(encoding="utf-8"))
+        por_pagina = int(pedido.url.params.get("per_page", 50))
+        pagina = int(pedido.url.params.get("page", 1))
+        paginas = max(1, -(-len(todas) // por_pagina))
+        meta = {"page": pagina, "pages": paginas, "per_page": por_pagina, "total": len(todas)}
+        return httpx.Response(200, json=[meta, todas[(pagina - 1) * por_pagina : pagina * por_pagina] or None])
+
+    return httpx.MockTransport(responder)
+
+
+@pytest.fixture
+def cliente_bm():
+    with httpx.Client(transport=transporte_bm(), base_url="https://bm.test/v2") as c:
+        yield c
+
+
 @pytest.fixture
 def cliente_web(sesion_con_semillas):
     """Cliente sin sesión. No sigue redirecciones, para poder revisarlas."""

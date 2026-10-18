@@ -25,7 +25,7 @@ app/
   config.py          # Settings (pydantic-settings) leídos de .env
   db.py              # engine, SessionLocal, Base, get_db
   models/            # modelos SQLAlchemy (paises, indicadores, datos, usuarios)
-  etl/               # cargadores por fuente: fmi.py, ...; CLI en __main__.py
+  etl/               # cargadores por fuente: fmi.py, banco_mundial.py; comun.py (HTTP, mapeos); CLI en __main__.py
   analisis/          # índices base 100 y agrupamientos
   auth/              # registro, login, Google, 2FA, sesiones, CSRF
   api/               # endpoints JSON (/api/...)
@@ -46,13 +46,13 @@ pyproject.toml
 **Países.** Cada país tiene un código interno único de 3 dígitos (`001`, `002`, ...), asignado una sola vez y guardado en `data/seed/paises.csv`. Nunca se renumera: los países nuevos van al final.
 
 - `pais`: `id`, `codigo` (interno, único), `nombre` (español), `nombre_en`, `iso2`, `iso3`, `es_agregado` (Mundo, Zona euro, etc.).
-- `pais_codigo_externo`: `pais_id`, `organismo` (`ISO3`, `FMI_DM`, `FMI_WEO`, `BM`), `codigo`. Único por (`organismo`, `codigo`). El FMI DataMapper usa ISO3; el WEO usa los códigos numéricos que están en la planilla del cliente (hoja "Codigos": 512 Afganistán, 213 Argentina, ...).
+- `pais_codigo_externo`: `pais_id`, `organismo` (`ISO3`, `FMI_DM`, `FMI_WEO`, `BM`), `codigo`. Único por (`organismo`, `codigo`). El FMI DataMapper usa ISO3; el WEO usa los códigos numéricos que están en la planilla del cliente (hoja "Codigos": 512 Afganistán, 213 Argentina, ...). El Banco Mundial usa ISO3 para los países (con excepciones como Kosovo `XKX` y Cisjordania y Gaza `PSE`) y códigos propios para sus agregados; solo se mapean los que tienen equivalente en el FMI (`WLD` Mundo, `EMU` zona euro, `EUU` Unión Europea). Columna `bm` de `paises.csv`. Ojo: un mismo código puede significar cosas distintas en cada organismo (`SSA` es África Subsahariana en el FMI y otro agregado en el BM), por eso cada organismo tiene su columna.
 
 **Fuentes e indicadores.**
 
 - `fuente`: `codigo` (`FMI_DM`, `BM`, `FRED`), `nombre`, `url`.
 - `indicador`: `codigo` interno (`PBI_USD_CORR`, `PBI_CRECIMIENTO`, ...), `nombre`, `unidad`, `escala`, `alcance` (`internacional` / `nacional`), `frecuencia` (`anual` / `mensual` / `diaria`), `descripcion`.
-- `indicador_serie_externa`: `indicador_id`, `fuente_id`, `codigo_externo` (por ejemplo `NGDPD`).
+- `indicador_serie_externa`: `indicador_id`, `fuente_id`, `codigo_externo` (por ejemplo `NGDPD`), `factor` (opcional: multiplica el valor de la fuente para llevarlo a la unidad y escala del indicador interno; por ejemplo `1e-9` para el PBI del BM, que viene en dólares, porque `PBI_USD_CORR` está en miles de millones). Un indicador interno puede tener una serie en cada fuente; sus datos se guardan por separado (la fuente es parte de la clave) y la API y el panel muestran una sola fuente a la vez.
 
 **Valores.** Tablas separadas por alcance y frecuencia (decisión del cliente). Todas guardan la fuente de cada valor, porque FMI y Banco Mundial pueden dar cifras distintas para el mismo dato.
 
@@ -67,10 +67,11 @@ Las cargas son idempotentes: si el valor ya existe se actualiza (upsert), no se 
 
 Preferir APIs oficiales antes que scraping. No scrapear sitios que lo prohíben (por ejemplo Investing.com).
 
-- FMI DataMapper: `https://www.imf.org/external/datamapper/api/v1/{indicador}` devuelve todos los países y años. También `/countries`, `/regions`, `/groups`, `/indicators`. Indicadores de v0.1: `NGDPD` (PBI, miles de millones USD corrientes), `NGDP_RPCH` (crecimiento real %). v0.2: `PPPGDP`, `NGDPDPC`, `GGXWDG_NGDP` (deuda % PIB), `LP` (población), `GGXCNL_NGDP` (déficit/superávit % PIB).
-- v0.2: Banco Mundial (PBI constante, comercio exterior), FRED (Dow Jones, oro), Uruguay (BCU, INE).
+- FMI DataMapper: `https://www.imf.org/external/datamapper/api/v1/{indicador}` devuelve todos los países y años. También `/countries`, `/regions`, `/groups`, `/indicators`. Indicadores: `NGDPD` (PBI, miles de millones USD corrientes), `NGDP_RPCH` (crecimiento real %), `GGXWDG_NGDP` (deuda bruta del gobierno general, % PIB), `GGXCNL_NGDP` (préstamo/endeudamiento neto del gobierno general, % PIB), `LP` (población, millones). Pendientes: `PPPGDP`, `NGDPDPC`.
+- Banco Mundial (World Development Indicators): `https://api.worldbank.org/v2/country/all/indicator/{codigo}?format=json&per_page=20000&page=N` devuelve `[metadatos, filas]` (se pagina con `pages`); los errores vienen con HTTP 200 y `[{"message": ...}]`. `/v2/country` indica qué códigos son agregados (`region.id == "NA"`). Indicadores: `NY.GDP.MKTP.CD` → `PBI_USD_CORR` (factor 1e-9), `NY.GDP.MKTP.KD.ZG` → `PBI_CRECIMIENTO`, `SP.POP.TOTL` → `POBLACION` (factor 1e-6), `NE.EXP.GNFS.CD` → `EXPORTACIONES_USD` y `NE.IMP.GNFS.CD` → `IMPORTACIONES_USD` (factor 1e-9), `GC.DOD.TOTL.GD.ZS` → `DEUDA_GOB_CENTRAL` (indicador propio: el gobierno central no es el gobierno general del FMI).
+- Próximos: FRED (Dow Jones, oro), Uruguay (BCU, INE).
 
-Ejecución: `python -m app.etl fmi` (CLI). Los tests no llaman a internet: usan `httpx.MockTransport` con respuestas de ejemplo en `tests/fixtures/`.
+Ejecución (CLI): `python -m app.etl fmi`, `python -m app.etl bm`, o `python -m app.etl todo` (semillas + FMI + BM). Los tests no llaman a internet: usan `httpx.MockTransport` con respuestas de ejemplo en `tests/fixtures/` (`fmi_<código>.json`, `bm_<código>.json`, `bm_paises.json`).
 
 ## Autenticación
 
@@ -89,7 +90,7 @@ Pendiente para más adelante: verificación de email y recuperación de contrase
 ## Web
 
 - `/login`, `/registro`, `/2fa/configurar`, `/2fa/verificar`, `/salir`.
-- `/` panel: elegir indicador, uno o varios países y un rango de años; ver gráfica de líneas y tabla.
+- `/` panel: elegir indicador, fuente (si el indicador tiene más de una; por defecto la primera con datos), uno o varios países y un rango de años; ver gráfica de líneas y tabla. Los años y países disponibles dependen de la fuente elegida.
 - Opción de índice base 100: el usuario elige el año base y todas las series pasan a valer 100 en ese año.
 - Interfaz en español rioplatense, sobria y enfocada en los datos. Usar las skills de diseño del proyecto (`.claude/skills/impeccable`, `design-taste-frontend`, `emil-design-eng`).
 

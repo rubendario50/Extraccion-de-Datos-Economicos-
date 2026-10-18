@@ -6,21 +6,24 @@ from fastapi import APIRouter, Depends, Request
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.api.series import fuente_por_defecto, fuentes_del_indicador
 from app.auth.dependencias import usuario_actual
 from app.db import get_db
-from app.models import DatoInternacionalAnual, Fuente, Indicador, Pais, PaisCodigoExterno, Usuario
+from app.models import DatoInternacionalAnual, Indicador, Pais, PaisCodigoExterno, Usuario
 from app.web.plantillas import renderizar
 
 router = APIRouter()
 
-FUENTE = "FMI_DM"
-NOMBRE_FUENTE = "FMI, World Economic Outlook (DataMapper)"
+# Nombre de cada fuente tal como se cita debajo de la gráfica (si no está, se usa el de la tabla fuente).
+NOMBRES_FUENTE = {
+    "FMI_DM": "FMI, World Economic Outlook (DataMapper)",
+    "BM": "Banco Mundial, World Development Indicators",
+}
 PAISES_POR_DEFECTO = ["URY", "ARG", "WEOWORLD"]
 
 
 def datos_del_panel(db: Session) -> dict:
-    """Indicadores, países con datos y años disponibles, para armar los controles."""
-    fuente = db.scalar(select(Fuente).where(Fuente.codigo == FUENTE))
+    """Indicadores con sus fuentes, países con datos y años disponibles por fuente, para armar los controles."""
     indicadores = db.scalars(
         select(Indicador)
         .where(Indicador.alcance == "internacional", Indicador.frecuencia == "anual")
@@ -36,31 +39,50 @@ def datos_del_panel(db: Session) -> dict:
 
     salida = []
     for ind in indicadores:
-        filtro = [DatoInternacionalAnual.indicador_id == ind.id, DatoInternacionalAnual.valor.is_not(None)]
-        if fuente is not None:
-            filtro.append(DatoInternacionalAnual.fuente_id == fuente.id)
-        con_datos = db.scalars(select(DatoInternacionalAnual.pais_id).where(*filtro).distinct()).all()
-        desde, hasta = db.execute(
-            select(func.min(DatoInternacionalAnual.anio), func.max(DatoInternacionalAnual.anio)).where(*filtro)
-        ).one()
+        fuentes = fuentes_del_indicador(db, ind.id)
+        por_defecto = fuente_por_defecto(db, ind.id, fuentes)
+        lista_fuentes = []
+        for fte in fuentes:
+            filtro = [
+                DatoInternacionalAnual.indicador_id == ind.id,
+                DatoInternacionalAnual.fuente_id == fte.id,
+                DatoInternacionalAnual.valor.is_not(None),
+            ]
+            con_datos = db.scalars(select(DatoInternacionalAnual.pais_id).where(*filtro).distinct()).all()
+            desde, hasta = db.execute(
+                select(func.min(DatoInternacionalAnual.anio), func.max(DatoInternacionalAnual.anio)).where(*filtro)
+            ).one()
+            lista_fuentes.append({
+                "codigo": fte.codigo,
+                "nombre": NOMBRES_FUENTE.get(fte.codigo, fte.nombre),
+                "desde": desde,
+                "hasta": hasta,
+                "paises": sorted(codigos[i] for i in con_datos if i in paises),
+            })
+        elegida = next((f for f in lista_fuentes if por_defecto and f["codigo"] == por_defecto.codigo), None)
         salida.append({
             "codigo": ind.codigo,
             "nombre": ind.nombre,
             "unidad": ind.unidad,
             "escala": ind.escala,
-            "desde": desde,
-            "hasta": hasta,
-            "paises": sorted(codigos[i] for i in con_datos if i in paises),
+            "fuentes": lista_fuentes,
+            "fuente": elegida["codigo"] if elegida else None,
+            # Años y países de la fuente por defecto.
+            "desde": elegida["desde"] if elegida else None,
+            "hasta": elegida["hasta"] if elegida else None,
+            "paises": elegida["paises"] if elegida else [],
         })
     lista_paises = sorted(
         ({"codigo": codigos[p.id], "nombre": p.nombre, "agregado": p.es_agregado} for p in paises.values()),
         key=lambda p: p["nombre"],
     )
+    primera = next((f for f in salida[0]["fuentes"] if f["codigo"] == salida[0]["fuente"]), None) if salida else None
     return {
         "indicadores": salida,
         "paises": lista_paises,
         "por_defecto": PAISES_POR_DEFECTO,
-        "fuente": NOMBRE_FUENTE,
+        # Fuente que se muestra antes de que cargue el JavaScript (la del primer indicador).
+        "fuente": primera["nombre"] if primera else NOMBRES_FUENTE["FMI_DM"],
     }
 
 

@@ -28,7 +28,7 @@ RAIZ = Path(__file__).resolve().parent.parent
 CSV_SALIDA = RAIZ / "data" / "seed" / "paises.csv"
 PLANILLA = RAIZ / "docs" / "cliente" / "03 01 Plantilla 1- Extraccion datos WEO PBI USD Corrientes-2025 10.ods"
 API = "https://www.imf.org/external/datamapper/api/v1"
-COLUMNAS = ["codigo", "nombre", "nombre_en", "iso2", "iso3", "es_agregado", "fmi_dm", "fmi_weo"]
+COLUMNAS = ["codigo", "nombre", "nombre_en", "iso2", "iso3", "es_agregado", "fmi_dm", "fmi_weo", "bm"]
 
 # Códigos del DataMapper que se omiten: sin nombre (ATI, ATL) o duplicados (KOS
 # repite Kosovo; el FMI publica los datos bajo UVK).
@@ -175,6 +175,13 @@ WEO_AGREGADOS = {
     "WE": "205", "MECA": "400", "SSA": "603",
 }
 
+# Códigos del Banco Mundial que no son el ISO3 (o agregados equivalentes), por código DataMapper.
+# Los demás países usan el ISO3. Los agregados del BM sin equivalente en el FMI no se mapean.
+BM_CODIGOS = {
+    "WBG": "PSE", "IMY": "IMN", "CHI": "CHI", "MFX": "MAF", "UVK": "XKX",
+    "WEOWORLD": "WLD", "EURO": "EMU", "EU": "EUU",
+}
+
 # Nombres en inglés que difieren entre la planilla y el DataMapper.
 WEO_AJUSTES = {"CHN": "China", "NRU": "Nauru"}
 
@@ -248,6 +255,7 @@ def generar() -> list[dict]:
         filas.append({
             "nombre": nombre, "nombre_en": nombre_en, "iso2": iso2, "iso3": iso3,
             "es_agregado": "0", "fmi_dm": codigo, "fmi_weo": weo.pop(clave_weo, ""),
+            "bm": BM_CODIGOS.get(codigo, iso3),
         })
     for endpoint in ("regions", "groups"):
         for codigo, datos in descargar(endpoint).items():
@@ -257,7 +265,7 @@ def generar() -> list[dict]:
                 "nombre": NOMBRES_AGREGADOS[codigo],
                 "nombre_en": " ".join((datos["label"] or "").split()),
                 "iso2": "", "iso3": "", "es_agregado": "1", "fmi_dm": codigo,
-                "fmi_weo": WEO_AGREGADOS.get(codigo, ""),
+                "fmi_weo": WEO_AGREGADOS.get(codigo, ""), "bm": BM_CODIGOS.get(codigo, ""),
             })
     if weo:
         print("Aviso: códigos WEO de la planilla sin país asociado:", weo, file=sys.stderr)
@@ -277,11 +285,18 @@ def asignar_codigos(filas: list[dict], existentes: dict[str, str]) -> list[dict]
 
 
 def main() -> None:
-    existentes = {}
+    existentes, bm_existentes = {}, {}
     if CSV_SALIDA.exists():
         with CSV_SALIDA.open(encoding="utf-8") as f:
-            existentes = {fila["fmi_dm"]: fila["codigo"] for fila in csv.DictReader(f)}
-    filas = asignar_codigos(generar(), existentes)
+            anteriores = list(csv.DictReader(f))
+        existentes = {fila["fmi_dm"]: fila["codigo"] for fila in anteriores}
+        # El código del BM se revisó a mano contra la API del BM: se conserva el que ya estaba.
+        bm_existentes = {fila["fmi_dm"]: fila.get("bm", "") for fila in anteriores if "bm" in fila}
+    filas = generar()
+    for fila in filas:
+        if fila["fmi_dm"] in bm_existentes:
+            fila["bm"] = bm_existentes[fila["fmi_dm"]]
+    filas = asignar_codigos(filas, existentes)
     CSV_SALIDA.parent.mkdir(parents=True, exist_ok=True)
     with CSV_SALIDA.open("w", encoding="utf-8", newline="") as f:
         escritor = csv.DictWriter(f, fieldnames=COLUMNAS)

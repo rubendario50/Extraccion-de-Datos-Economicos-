@@ -13,6 +13,8 @@ Plataforma de recopilación, análisis y difusión de datos económicos internac
 
 Versión 0.1 (en desarrollo): base de datos PostgreSQL en Podman, tabla maestra de países (`data/seed/paises.csv`), carga del PBI del FMI DataMapper (PBI en dólares corrientes y crecimiento real) y una web con login (contraseña o Google, doble factor obligatorio) donde se eligen indicador, países y años y se ven la gráfica y la tabla, con opción de índice base 100. La arquitectura está en `docs/arquitectura.md`.
 
+En desarrollo para la 0.2: más indicadores internacionales anuales del FMI (deuda bruta y resultado fiscal del gobierno general, población) y del Banco Mundial (PBI, crecimiento, población, exportaciones, importaciones y deuda del gobierno central). Cuando un mismo dato viene de las dos fuentes se guardan ambas cifras por separado, y el panel y la API dejan elegir la fuente.
+
 ## Levantar el proyecto con Podman
 
 Requisitos: Git, Podman y `podman-compose`.
@@ -60,13 +62,20 @@ python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().d
 
 ### Cargar los datos
 
-Al arrancar, el contenedor `app` aplica las migraciones de Alembic. Después hay que cargar las semillas (países, fuentes, indicadores) y los datos del FMI (los comandos son iguales en Linux y Windows):
+Al arrancar, el contenedor `app` aplica las migraciones de Alembic. Después hay que cargar las semillas (países, fuentes, indicadores) y los datos del FMI y del Banco Mundial (los comandos son iguales en Linux y Windows):
 
 ```bash
+podman-compose exec app python -m app.etl todo                      # semillas + FMI + Banco Mundial
+
+# o por partes:
 podman-compose exec app python -m app.etl semillas
 podman-compose exec app python -m app.etl fmi                       # todos los indicadores del FMI
 podman-compose exec app python -m app.etl fmi --indicadores NGDPD   # solo algunos
+podman-compose exec app python -m app.etl bm                        # todos los indicadores del Banco Mundial
+podman-compose exec app python -m app.etl bm --indicadores NY.GDP.MKTP.CD,SP.POP.TOTL
 ```
+
+Los códigos de país que la fuente publica y no están en `paises.csv` se avisan en el registro (`WARNING ... sin mapear`). Los agregados del Banco Mundial sin equivalente en el FMI (regiones propias del BM, grupos de ingreso) se omiten.
 
 Las cargas son idempotentes: se pueden repetir para actualizar los valores sin duplicarlos.
 
@@ -92,13 +101,15 @@ Toda la API exige una sesión iniciada con el doble factor completo (la cookie d
 
 | Parámetro | Obligatorio | Descripción |
 |---|---|---|
-| `indicador` | sí | Código interno, por ejemplo `PBI_USD_CORR` o `PBI_CRECIMIENTO`. |
+| `indicador` | sí | Código interno: `PBI_USD_CORR`, `PBI_CRECIMIENTO`, `POBLACION`, `DEUDA_GOB_GENERAL`, `RESULTADO_FISCAL`, `EXPORTACIONES_USD`, `IMPORTACIONES_USD`, `DEUDA_GOB_CENTRAL`. |
 | `paises` | sí | Códigos ISO3 o del FMI DataMapper separados por coma (`URY,ARG,WEOWORLD`). No distingue mayúsculas; los repetidos se ignoran. Hasta 8. |
 | `desde`, `hasta` | no | Primer y último año (inclusive). |
 | `base` | no | Año base: las series se expresan en índice base 100. |
-| `fuente` | no | Código de la fuente (por defecto `FMI_DM`). |
+| `fuente` | no | `FMI_DM` o `BM`. Por defecto, la primera fuente con datos para ese indicador (el FMI antes que el Banco Mundial). |
 
-Respuesta: `{"indicador": {codigo, nombre, unidad, escala}, "fuente", "base", "series": [{"pais", "codigo", "nombre", "datos": [{"anio", "valor"}]}]}`. Errores: 404 (indicador, fuente o país desconocido), 400 (más de 8 países), 422 (parámetros inválidos o año base sin dato), con el motivo en `detail`.
+Las fuentes nunca se mezclan: todas las series de una respuesta salen de la misma fuente, aunque el indicador tenga datos de las dos. Las cifras de ambas están en la misma unidad y escala (por ejemplo, el PBI en miles de millones de dólares y la población en millones).
+
+Respuesta: `{"indicador": {codigo, nombre, unidad, escala}, "fuente", "fuente_nombre", "fuentes", "base", "series": [{"pais", "codigo", "nombre", "fuente", "datos": [{"anio", "valor"}]}]}`, donde `fuentes` lista las fuentes que publican el indicador. Errores: 404 (indicador, fuente o país desconocido, o fuente que no publica ese indicador), 400 (más de 8 países), 422 (parámetros inválidos o año base sin dato), con el motivo en `detail`.
 
 ## Acceso y seguridad
 
@@ -126,7 +137,7 @@ Si el email de Google ya tiene una cuenta con contraseña, se vinculan las dos (
 
 ## Correr los tests en local
 
-Los tests usan SQLite en memoria, respuestas de ejemplo del FMI (`tests/fixtures/`) y un Google simulado: no necesitan Podman, PostgreSQL ni internet. Requieren Python 3.12 o superior.
+Los tests usan SQLite en memoria, respuestas de ejemplo del FMI y del Banco Mundial (`tests/fixtures/`) y un Google simulado: no necesitan Podman, PostgreSQL ni internet. Requieren Python 3.12 o superior.
 
 Linux Mint:
 
@@ -144,10 +155,12 @@ py -m venv .venv
 .venv\Scripts\pytest
 ```
 
-## Agregar un indicador del FMI
+## Agregar un indicador
 
-Agregar una fila en `data/seed/indicadores.csv` con el código interno, sus datos y el código del FMI DataMapper (por ejemplo `LP` para población), y volver a correr `python -m app.etl semillas` y `python -m app.etl fmi`.
+Agregar una fila en `data/seed/indicadores.csv` con el código interno, sus datos, la fuente (`FMI_DM` o `BM`) y el código en esa fuente (por ejemplo `LP` en el FMI o `SP.POP.TOTL` en el Banco Mundial), y volver a correr `python -m app.etl semillas` y `python -m app.etl fmi` o `bm`.
+
+Si es el mismo dato en las dos fuentes, se repite el código interno en dos filas, una por fuente; el nombre, la unidad y la escala salen de la primera. Si una fuente lo publica en otra escala, la columna `factor` convierte su valor a la del indicador: por ejemplo `1e-9` para pasar los dólares del Banco Mundial a miles de millones, o `1e-6` para pasar personas a millones.
 
 ## Tabla de países
 
-`data/seed/paises.csv` es la fuente de verdad de los códigos internos de países y agregados, y se versiona. Se generó con `scripts/generar_paises.py`, que cruza el FMI DataMapper con los códigos WEO de la planilla del cliente. Si se vuelve a correr, respeta los códigos ya asignados y agrega los países nuevos al final.
+`data/seed/paises.csv` es la fuente de verdad de los códigos internos de países y agregados, y se versiona. Se generó con `scripts/generar_paises.py`, que cruza el FMI DataMapper con los códigos WEO de la planilla del cliente. La columna `bm` tiene el código del Banco Mundial: el ISO3 en los países (salvo Kosovo `XKX`, Cisjordania y Gaza `PSE`, Isla de Man `IMN`, San Martín `MAF`), y `WLD`, `EMU` y `EUU` para el Mundo, la zona euro y la Unión Europea. Si se vuelve a correr, respeta los códigos ya asignados y agrega los países nuevos al final.

@@ -7,13 +7,39 @@ from sqlalchemy.orm import Session
 from app.analisis.indices import ErrorIndice, a_base_100
 from app.auth.dependencias import usuario_actual
 from app.db import get_db
-from app.models import DatoInternacionalAnual, Fuente, Indicador, Pais, PaisCodigoExterno
+from app.models import DatoInternacionalAnual, Fuente, Indicador, IndicadorSerieExterna, Pais, PaisCodigoExterno
 
 # Toda la API exige sesión con el doble factor completo.
 router = APIRouter(prefix="/api", dependencies=[Depends(usuario_actual)])
 
 # Máximo de países por pedido; es lo mismo que permite elegir el panel.
 MAX_PAISES = 8
+
+
+def fuentes_del_indicador(db: Session, indicador_id: int) -> list[Fuente]:
+    """Fuentes que publican el indicador (según indicadores.csv), en el orden de fuentes.csv."""
+    return list(
+        db.scalars(
+            select(Fuente)
+            .join(IndicadorSerieExterna, IndicadorSerieExterna.fuente_id == Fuente.id)
+            .where(IndicadorSerieExterna.indicador_id == indicador_id)
+            .distinct()
+            .order_by(Fuente.id)
+        )
+    )
+
+
+def fuente_por_defecto(db: Session, indicador_id: int, fuentes: list[Fuente]) -> Fuente | None:
+    """La primera fuente con datos guardados para el indicador (FMI antes que BM); si ninguna tiene, la primera."""
+    for fte in fuentes:
+        hay = db.scalar(
+            select(DatoInternacionalAnual.anio)
+            .where(DatoInternacionalAnual.indicador_id == indicador_id, DatoInternacionalAnual.fuente_id == fte.id)
+            .limit(1)
+        )
+        if hay is not None:
+            return fte
+    return fuentes[0] if fuentes else None
 
 
 @router.get("/series")
@@ -23,7 +49,7 @@ def obtener_series(
     desde: int | None = Query(None, description="Primer año (inclusive)"),
     hasta: int | None = Query(None, description="Último año (inclusive)"),
     base: int | None = Query(None, description="Año base: si se indica, las series se expresan en índice base 100"),
-    fuente: str = Query("FMI_DM", description="Código de la fuente"),
+    fuente: str | None = Query(None, description="Código de la fuente (FMI_DM, BM). Por defecto, la primera con datos"),
     db: Session = Depends(get_db),
 ) -> dict:
     ind = db.scalar(select(Indicador).where(Indicador.codigo == indicador))
@@ -31,9 +57,19 @@ def obtener_series(
         raise HTTPException(404, f"Indicador desconocido: {indicador}")
     if (ind.alcance, ind.frecuencia) != ("internacional", "anual"):
         raise HTTPException(400, f"Por ahora solo hay series internacionales anuales ({indicador} es {ind.alcance} {ind.frecuencia}).")
-    fte = db.scalar(select(Fuente).where(Fuente.codigo == fuente))
-    if fte is None:
-        raise HTTPException(404, f"Fuente desconocida: {fuente}")
+    # Nunca se mezclan fuentes: todas las series de la respuesta salen de la misma.
+    fuentes = fuentes_del_indicador(db, ind.id)
+    if fuente is None:
+        fte = fuente_por_defecto(db, ind.id, fuentes)
+        if fte is None:
+            raise HTTPException(404, f"El indicador {indicador} no tiene fuentes definidas.")
+    else:
+        fte = db.scalar(select(Fuente).where(Fuente.codigo == fuente))
+        if fte is None:
+            raise HTTPException(404, f"Fuente desconocida: {fuente}")
+        if fte not in fuentes:
+            disponibles = ", ".join(f.codigo for f in fuentes) or "ninguna"
+            raise HTTPException(404, f"La fuente {fte.codigo} no publica {indicador} (disponibles: {disponibles}).")
     if desde is not None and hasta is not None and desde > hasta:
         raise HTTPException(422, "`desde` no puede ser mayor que `hasta`.")
 
@@ -86,7 +122,7 @@ def obtener_series(
             for anio, valor in valores.items()
             if (desde is None or anio >= desde) and (hasta is None or anio <= hasta)
         ]
-        series.append({"pais": codigo, "codigo": pais.codigo, "nombre": pais.nombre, "datos": datos})
+        series.append({"pais": codigo, "codigo": pais.codigo, "nombre": pais.nombre, "fuente": fte.codigo, "datos": datos})
 
     return {
         "indicador": {
@@ -96,6 +132,8 @@ def obtener_series(
             "escala": None if base is not None else ind.escala,
         },
         "fuente": fte.codigo,
+        "fuente_nombre": fte.nombre,
+        "fuentes": [f.codigo for f in fuentes],
         "base": base,
         "series": series,
     }

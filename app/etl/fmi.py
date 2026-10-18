@@ -5,18 +5,19 @@ tienen fuente FMI_DM: sumar un indicador nuevo es agregar una fila a ese CSV.
 """
 
 import logging
-import time
 from datetime import datetime, timezone
 
 import httpx
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.etl.comun import obtener_json, paises_por_codigo, series_de_fuente
 from app.etl.upsert import upsert
-from app.models import DatoInternacionalAnual, Fuente, IndicadorSerieExterna, PaisCodigoExterno
+from app.models import DatoInternacionalAnual, IndicadorSerieExterna
 
 URL_BASE = "https://www.imf.org/external/datamapper/api/v1"
 FUENTE = "FMI_DM"
+
+__all__ = ["cargar_fmi", "crear_cliente", "obtener_json", "series_fmi"]
 
 log = logging.getLogger(__name__)
 
@@ -25,44 +26,9 @@ def crear_cliente() -> httpx.Client:
     return httpx.Client(base_url=URL_BASE, timeout=httpx.Timeout(60.0, connect=15.0), follow_redirects=True)
 
 
-def obtener_json(cliente: httpx.Client, ruta: str, reintentos: int = 3, espera: float = 2.0) -> dict:
-    """GET con reintentos simples ante errores de red o respuestas 5xx / 429."""
-    for intento in range(1, reintentos + 1):
-        try:
-            respuesta = cliente.get(ruta)
-            if respuesta.status_code < 500 and respuesta.status_code != 429:
-                respuesta.raise_for_status()
-                return respuesta.json()
-            error: Exception = httpx.HTTPStatusError(
-                f"HTTP {respuesta.status_code}", request=respuesta.request, response=respuesta
-            )
-        except httpx.TransportError as e:
-            error = e
-        log.warning("Falló %s (intento %d/%d): %s", ruta, intento, reintentos, error)
-        if intento < reintentos:
-            time.sleep(espera * intento)
-    raise error
-
-
 def series_fmi(sesion: Session, codigos: list[str] | None = None) -> list[IndicadorSerieExterna]:
     """Series externas del FMI DataMapper, opcionalmente filtradas por código (NGDPD, ...)."""
-    consulta = (
-        select(IndicadorSerieExterna)
-        .join(Fuente)
-        .where(Fuente.codigo == FUENTE)
-        .order_by(IndicadorSerieExterna.codigo_externo)
-    )
-    series = list(sesion.scalars(consulta))
-    if codigos:
-        conocidas = {s.codigo_externo for s in series}
-        faltan = sorted(set(codigos) - conocidas)
-        if faltan:
-            raise ValueError(
-                f"Indicadores del FMI no definidos en indicadores.csv: {', '.join(faltan)}. "
-                "Cargá las semillas o agregalos al CSV."
-            )
-        series = [s for s in series if s.codigo_externo in codigos]
-    return series
+    return series_de_fuente(sesion, FUENTE, "FMI", codigos)
 
 
 def cargar_fmi(
@@ -75,16 +41,11 @@ def cargar_fmi(
     series = series_fmi(sesion, codigos)
     if not series:
         raise ValueError("No hay indicadores del FMI definidos: corré primero `python -m app.etl semillas`.")
-    paises = dict(
-        sesion.execute(
-            select(PaisCodigoExterno.codigo, PaisCodigoExterno.pais_id).where(
-                PaisCodigoExterno.organismo == FUENTE
-            )
-        ).all()
-    )
+    paises = paises_por_codigo(sesion, FUENTE)
     resultado = {}
     for serie in series:
         codigo = serie.codigo_externo
+        factor = serie.factor or 1.0
         datos = obtener_json(cliente, f"/{codigo}", espera=espera).get("values", {}).get(codigo, {})
         ahora = datetime.now(timezone.utc)
         filas, desconocidos = [], []
@@ -101,7 +62,7 @@ def cargar_fmi(
                     "indicador_id": serie.indicador_id,
                     "fuente_id": serie.fuente_id,
                     "anio": int(anio),
-                    "valor": float(valor),
+                    "valor": float(valor) * factor,
                     "actualizado_en": ahora,
                 })
         if desconocidos:

@@ -1,0 +1,52 @@
+[
+ {
+  "id": "ARG",
+  "iso2Code": "AR",
+  "name": "Argentina",
+  "region": {
+   "id": "LCN",
+   "iso2code": "",
+   "value": "Latin America & Caribbean "
+  }
+ },
+ {
+  "id": "URY",
+  "iso2Code": "UY",
+  "name": "Uruguay",
+  "region": {
+   "id": "LCN",
+   "iso2code": "",
+   "value": "Latin America & Caribbean "
+  }
+ },
+ {
+  "id": "WLD",
+  "iso2Code": "1W",
+  "name": "World",
+  "region": {
+   "id": "NA",
+   "iso2code": "",
+   "value": "Aggregates"
+  }
+ },
+ {
+  "id": "LCN",
+  "iso2Code": "ZJ",
+  "name": "Latin America & Caribbean",
+  "region": {
+   "id": "NA",
+   "iso2code": "",
+   "value": "Aggregates"
+  }
+ },
+ {
+  "id": "HIC",
+  "iso2Code": "XD",
+  "name": "High income",
+  "region": {
+   "id": "NA",
+   "iso2code": "",
+   "value": "Aggregates"
+  }
+ }
+]

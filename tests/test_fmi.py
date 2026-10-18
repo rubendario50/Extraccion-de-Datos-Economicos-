@@ -24,12 +24,15 @@ def total(sesion):
 def test_carga_todos_los_indicadores(sesion_con_semillas, cliente_fmi):
     resultado = cargar_fmi(sesion_con_semillas, cliente_fmi, espera=0)
     # NGDPD: 4 países x 4 años, menos un null (URY 1980); ZZZ no existe y se omite.
-    assert resultado == {"NGDPD": 15, "NGDP_RPCH": 4}
+    assert resultado == {"NGDPD": 15, "NGDP_RPCH": 4, "GGXWDG_NGDP": 4, "GGXCNL_NGDP": 4, "LP": 6}
     assert valor(sesion_con_semillas, "ARG", "PBI_USD_CORR", 1980) == pytest.approx(233.696)
     assert valor(sesion_con_semillas, "USA", "PBI_USD_CORR", 2000) == pytest.approx(10250.95)
     assert valor(sesion_con_semillas, "World", "PBI_USD_CORR", 2024) == pytest.approx(111906.375)
     assert valor(sesion_con_semillas, "URY", "PBI_CRECIMIENTO", 2010) == pytest.approx(7.8)
     assert valor(sesion_con_semillas, "URY", "PBI_USD_CORR", 1980) is None
+    assert valor(sesion_con_semillas, "URY", "DEUDA_GOB_GENERAL", 2020) == pytest.approx(68.2)
+    assert valor(sesion_con_semillas, "ARG", "RESULTADO_FISCAL", 2020) == pytest.approx(-8.7)
+    assert valor(sesion_con_semillas, "URY", "POBLACION", 2010) == pytest.approx(3.397)  # millones
 
 
 def test_filtra_indicadores(sesion_con_semillas):

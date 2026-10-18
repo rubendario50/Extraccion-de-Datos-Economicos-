@@ -12,7 +12,7 @@ from app.models import Fuente, Indicador, IndicadorSerieExterna, Pais, PaisCodig
 DIR_SEMILLAS = Path(__file__).resolve().parents[2] / "data" / "seed"
 
 # Columna de paises.csv -> organismo en pais_codigo_externo.
-ORGANISMOS = {"iso3": "ISO3", "fmi_dm": "FMI_DM", "fmi_weo": "FMI_WEO"}
+ORGANISMOS = {"iso3": "ISO3", "fmi_dm": "FMI_DM", "fmi_weo": "FMI_WEO", "bm": "BM"}
 
 
 def _leer_csv(ruta: Path) -> list[dict]:
@@ -43,7 +43,7 @@ def cargar_paises(sesion: Session, ruta: Path) -> int:
         {"pais_id": ids[f["codigo"]], "organismo": organismo, "codigo": f[columna]}
         for f in filas
         for columna, organismo in ORGANISMOS.items()
-        if f[columna]
+        if f.get(columna)
     ]
     upsert(sesion, PaisCodigoExterno, codigos, claves=["organismo", "codigo"])
     return len(filas)
@@ -58,11 +58,15 @@ def cargar_fuentes(sesion: Session, ruta: Path) -> int:
 def cargar_indicadores(sesion: Session, ruta: Path) -> int:
     """Cada fila define un indicador interno y su código en una fuente.
 
-    Un mismo indicador puede repetirse en varias filas con distinta fuente.
+    Un mismo indicador puede repetirse en varias filas con distinta fuente: el nombre, la unidad
+    y la escala salen de la primera fila. La columna opcional `factor` lleva el valor de la fuente
+    a esa escala (por ejemplo 1e-9 para pasar dólares a miles de millones).
     """
     filas = _leer_csv(ruta)
     campos = ["codigo", "nombre", "unidad", "escala", "alcance", "frecuencia", "descripcion"]
-    indicadores = {f["codigo"]: {c: f[c] or None for c in campos} for f in filas}
+    indicadores: dict[str, dict] = {}
+    for f in filas:
+        indicadores.setdefault(f["codigo"], {c: f[c] or None for c in campos})
     upsert(sesion, Indicador, list(indicadores.values()), claves=["codigo"])
 
     ids_indicador = dict(sesion.execute(select(Indicador.codigo, Indicador.id)).all())
@@ -75,6 +79,7 @@ def cargar_indicadores(sesion: Session, ruta: Path) -> int:
             "indicador_id": ids_indicador[f["codigo"]],
             "fuente_id": ids_fuente[f["fuente"]],
             "codigo_externo": f["codigo_externo"],
+            "factor": float(f["factor"]) if f.get("factor") else None,
         })
     upsert(sesion, IndicadorSerieExterna, series, claves=["fuente_id", "codigo_externo"])
     return len(indicadores)

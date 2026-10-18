@@ -67,6 +67,29 @@ def test_datos_del_panel(cliente_api, sesion_con_semillas, cliente_fmi):
     assert '<script src="/static/vendor/echarts.min.js' in html
 
 
+def test_datos_del_panel_con_dos_fuentes(cliente_api, sesion_con_semillas, cliente_fmi, cliente_bm):
+    from app.etl.banco_mundial import cargar_bm
+
+    cargar_fmi(sesion_con_semillas, cliente_fmi, espera=0)
+    cargar_bm(sesion_con_semillas, cliente_bm, espera=0)
+    html = cliente_api.get("/").text
+    datos = json.loads(re.search(r'<script type="application/json" id="datos-panel">(.*?)</script>', html, re.S).group(1))
+    indicadores = {i["codigo"]: i for i in datos["indicadores"]}
+    pbi = indicadores["PBI_USD_CORR"]
+    assert pbi["fuente"] == "FMI_DM"
+    fmi, bm = pbi["fuentes"]
+    assert (fmi["codigo"], bm["codigo"]) == ("FMI_DM", "BM")
+    assert (fmi["desde"], fmi["hasta"]) == (1980, 2024) and (bm["desde"], bm["hasta"]) == (2010, 2020)
+    assert bm["nombre"] == "Banco Mundial, World Development Indicators"
+    assert set(bm["paises"]) == {"ARG", "URY", "WEOWORLD"} and "USA" in fmi["paises"]
+    # Los años y países de nivel superior son los de la fuente por defecto.
+    assert (pbi["desde"], pbi["paises"]) == (fmi["desde"], fmi["paises"])
+    central = indicadores["DEUDA_GOB_CENTRAL"]
+    assert central["fuente"] == "BM" and [f["codigo"] for f in central["fuentes"]] == ["BM"]
+    assert central["paises"] == ["URY"]  # Argentina no tiene datos (null)
+    assert '<select id="fuente"' in html
+
+
 # --- CSRF ---
 
 def test_csrf_rechazado(cliente_web, sesion_con_semillas):

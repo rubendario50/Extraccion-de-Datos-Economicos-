@@ -1,0 +1,162 @@
+[
+ {
+  "indicator": {
+   "id": "NY.GDP.MKTP.CD",
+   "value": "GDP (current US$)"
+  },
+  "country": {
+   "id": "AR",
+   "value": "Argentina"
+  },
+  "countryiso3code": "ARG",
+  "date": "2020",
+  "value": 385740508436.965,
+  "unit": "",
+  "obs_status": "",
+  "decimal": 0
+ },
+ {
+  "indicator": {
+   "id": "NY.GDP.MKTP.CD",
+   "value": "GDP (current US$)"
+  },
+  "country": {
+   "id": "AR",
+   "value": "Argentina"
+  },
+  "countryiso3code": "ARG",
+  "date": "2010",
+  "value": 423627422092.49,
+  "unit": "",
+  "obs_status": "",
+  "decimal": 0
+ },
+ {
+  "indicator": {
+   "id": "NY.GDP.MKTP.CD",
+   "value": "GDP (current US$)"
+  },
+  "country": {
+   "id": "UY",
+   "value": "Uruguay"
+  },
+  "countryiso3code": "URY",
+  "date": "2020",
+  "value": 53559354501.4278,
+  "unit": "",
+  "obs_status": "",
+  "decimal": 0
+ },
+ {
+  "indicator": {
+   "id": "NY.GDP.MKTP.CD",
+   "value": "GDP (current US$)"
+  },
+  "country": {
+   "id": "UY",
+   "value": "Uruguay"
+  },
+  "countryiso3code": "URY",
+  "date": "2010",
+  "value": 41950361211.9581,
+  "unit": "",
+  "obs_status": "",
+  "decimal": 0
+ },
+ {
+  "indicator": {
+   "id": "NY.GDP.MKTP.CD",
+   "value": "GDP (current US$)"
+  },
+  "country": {
+   "id": "1W",
+   "value": "World"
+  },
+  "countryiso3code": "WLD",
+  "date": "2020",
+  "value": 86388502867289.2,
+  "unit": "",
+  "obs_status": "",
+  "decimal": 0
+ },
+ {
+  "indicator": {
+   "id": "NY.GDP.MKTP.CD",
+   "value": "GDP (current US$)"
+  },
+  "country": {
+   "id": "1W",
+   "value": "World"
+  },
+  "countryiso3code": "WLD",
+  "date": "2010",
+  "value": 66893676131662.7,
+  "unit": "",
+  "obs_status": "",
+  "decimal": 0
+ },
+ {
+  "indicator": {
+   "id": "NY.GDP.MKTP.CD",
+   "value": "GDP (current US$)"
+  },
+  "country": {
+   "id": "ZJ",
+   "value": "Latin America & Caribbean"
+  },
+  "countryiso3code": "LCN",
+  "date": "2020",
+  "value": 4627829769474.15,
+  "unit": "",
+  "obs_status": "",
+  "decimal": 0
+ },
+ {
+  "indicator": {
+   "id": "NY.GDP.MKTP.CD",
+   "value": "GDP (current US$)"
+  },
+  "country": {
+   "id": "ZJ",
+   "value": "Latin America & Caribbean"
+  },
+  "countryiso3code": "LCN",
+  "date": "2010",
+  "value": 5397655976518.38,
+  "unit": "",
+  "obs_status": "",
+  "decimal": 0
+ },
+ {
+  "indicator": {
+   "id": "NY.GDP.MKTP.CD",
+   "value": "GDP (current US$)"
+  },
+  "country": {
+   "id": "XD",
+   "value": "High income"
+  },
+  "countryiso3code": "",
+  "date": "2020",
+  "value": 2.0,
+  "unit": "",
+  "obs_status": "",
+  "decimal": 0
+ },
+ {
+  "indicator": {
+   "id": "NY.GDP.MKTP.CD",
+   "value": "GDP (current US$)"
+  },
+  "country": {
+   "id": "XD",
+   "value": "High income"
+  },
+  "countryiso3code": "",
+  "date": "2010",
+  "value": 1.0,
+  "unit": "",
+  "obs_status": "",
+  "decimal": 0
+ }
+]

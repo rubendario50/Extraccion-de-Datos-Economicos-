@@ -1,6 +1,6 @@
 """Fuentes de datos, indicadores internos y su código en cada fuente."""
 
-from sqlalchemy import ForeignKey, String, Text, UniqueConstraint
+from sqlalchemy import Double, ForeignKey, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db import Base
@@ -40,6 +40,9 @@ class IndicadorSerieExterna(Base):
     indicador_id: Mapped[int] = mapped_column(ForeignKey("indicador.id", ondelete="CASCADE"), index=True)
     fuente_id: Mapped[int] = mapped_column(ForeignKey("fuente.id"))
     codigo_externo: Mapped[str] = mapped_column(String(50))
+    # Multiplicador que lleva el valor de la fuente a la unidad y escala del indicador interno
+    # (por ejemplo 1e-9 para pasar dólares del Banco Mundial a miles de millones). Vacío = 1.
+    factor: Mapped[float | None] = mapped_column(Double)
 
     indicador: Mapped[Indicador] = relationship(back_populates="series_externas")
     fuente: Mapped[Fuente] = relationship()

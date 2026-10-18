@@ -1,3 +1,12 @@
-codigo,nombre,unidad,escala,alcance,frecuencia,descripcion,fuente,codigo_externo
-PBI_USD_CORR,"PBI, precios corrientes",Dólares estadounidenses corrientes,Miles de millones,internacional,anual,Producto bruto interno a precios corrientes en dólares (WEO).,FMI_DM,NGDPD
-PBI_CRECIMIENTO,"PBI, crecimiento real",Variación porcentual anual,Unidades,internacional,anual,Variación anual del PBI a precios constantes (WEO).,FMI_DM,NGDP_RPCH
+codigo,nombre,unidad,escala,alcance,frecuencia,descripcion,fuente,codigo_externo,factor
+PBI_USD_CORR,"PBI, precios corrientes",Dólares estadounidenses corrientes,Miles de millones,internacional,anual,Producto bruto interno a precios corrientes en dólares.,FMI_DM,NGDPD,
+PBI_CRECIMIENTO,"PBI, crecimiento real",Variación porcentual anual,Unidades,internacional,anual,Variación anual del PBI a precios constantes.,FMI_DM,NGDP_RPCH,
+DEUDA_GOB_GENERAL,"Deuda bruta del gobierno general",Porcentaje del PBI,Unidades,internacional,anual,Deuda bruta del gobierno general (todos los niveles de gobierno) como porcentaje del PBI.,FMI_DM,GGXWDG_NGDP,
+RESULTADO_FISCAL,"Resultado fiscal del gobierno general",Porcentaje del PBI,Unidades,internacional,anual,Préstamo neto (+) o endeudamiento neto (−) del gobierno general: ingresos menos gastos totales.,FMI_DM,GGXCNL_NGDP,
+POBLACION,Población,Personas,Millones,internacional,anual,Población total.,FMI_DM,LP,
+PBI_USD_CORR,"PBI, precios corrientes",Dólares estadounidenses corrientes,Miles de millones,internacional,anual,Producto bruto interno a precios corrientes en dólares.,BM,NY.GDP.MKTP.CD,1e-9
+PBI_CRECIMIENTO,"PBI, crecimiento real",Variación porcentual anual,Unidades,internacional,anual,Variación anual del PBI a precios constantes.,BM,NY.GDP.MKTP.KD.ZG,
+POBLACION,Población,Personas,Millones,internacional,anual,Población total.,BM,SP.POP.TOTL,1e-6
+EXPORTACIONES_USD,"Exportaciones de bienes y servicios",Dólares estadounidenses corrientes,Miles de millones,internacional,anual,Exportaciones de bienes y servicios a precios corrientes en dólares.,BM,NE.EXP.GNFS.CD,1e-9
+IMPORTACIONES_USD,"Importaciones de bienes y servicios",Dólares estadounidenses corrientes,Miles de millones,internacional,anual,Importaciones de bienes y servicios a precios corrientes en dólares.,BM,NE.IMP.GNFS.CD,1e-9
+DEUDA_GOB_CENTRAL,"Deuda del gobierno central",Porcentaje del PBI,Unidades,internacional,anual,Deuda total del gobierno central como porcentaje del PBI (no incluye gobiernos subnacionales; distinta de la deuda del gobierno general).,BM,GC.DOD.TOTL.GD.ZS,

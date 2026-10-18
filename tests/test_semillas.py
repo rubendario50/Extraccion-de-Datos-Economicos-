@@ -16,7 +16,7 @@ def test_paises_csv_es_consistente():
     codigos = [f["codigo"] for f in filas]
     assert len(codigos) == len(set(codigos))
     assert all(len(c) == 3 and c.isdigit() for c in codigos)
-    for columna in ("fmi_dm", "fmi_weo", "iso3"):
+    for columna in ("fmi_dm", "fmi_weo", "iso3", "bm"):
         valores = [f[columna] for f in filas if f[columna]]
         assert len(valores) == len(set(valores)), f"{columna} repetido"
     por_dm = {f["fmi_dm"]: f for f in filas}
@@ -24,6 +24,11 @@ def test_paises_csv_es_consistente():
     assert por_dm["ARG"]["fmi_weo"] == "213"
     assert por_dm["WEOWORLD"]["nombre"] == "Mundo" and por_dm["WEOWORLD"]["es_agregado"] == "1"
     assert por_dm["EURO"]["nombre"] == "Zona euro"
+    # Código del Banco Mundial: el ISO3 en los países, propio en Kosovo y Palestina y en los agregados equivalentes.
+    assert por_dm["URY"]["bm"] == "URY" and por_dm["UVK"]["bm"] == "XKX" and por_dm["WBG"]["bm"] == "PSE"
+    assert por_dm["WEOWORLD"]["bm"] == "WLD" and por_dm["EURO"]["bm"] == "EMU"
+    # El FMI usa SSA para África Subsahariana; en el BM SSA es otro agregado y no se mapea.
+    assert por_dm["SSA"]["bm"] == "" and por_dm["WE"]["bm"] == ""
 
 
 def test_carga_semillas(sesion):
@@ -33,9 +38,37 @@ def test_carga_semillas(sesion):
     uruguay = sesion.scalar(select(Pais).where(Pais.iso3 == "URY"))
     assert uruguay.nombre == "Uruguay" and not uruguay.es_agregado
     codigos = {c.organismo: c.codigo for c in uruguay.codigos_externos}
-    assert codigos == {"ISO3": "URY", "FMI_DM": "URY", "FMI_WEO": "298"}
+    assert codigos == {"ISO3": "URY", "FMI_DM": "URY", "FMI_WEO": "298", "BM": "URY"}
     serie = sesion.scalar(select(IndicadorSerieExterna).where(IndicadorSerieExterna.codigo_externo == "NGDPD"))
-    assert serie.indicador.codigo == "PBI_USD_CORR" and serie.fuente.codigo == "FMI_DM"
+    assert serie.indicador.codigo == "PBI_USD_CORR" and serie.fuente.codigo == "FMI_DM" and serie.factor is None
+
+
+def test_mismo_indicador_con_dos_fuentes_y_factor(sesion):
+    cargar_semillas(sesion)
+    pbi = sesion.scalar(select(Indicador).where(Indicador.codigo == "PBI_USD_CORR"))
+    series = {s.fuente.codigo: s for s in pbi.series_externas}
+    assert set(series) == {"FMI_DM", "BM"}
+    assert series["BM"].codigo_externo == "NY.GDP.MKTP.CD" and series["BM"].factor == 1e-9
+    assert pbi.escala == "Miles de millones"
+    poblacion = sesion.scalar(select(Indicador).where(Indicador.codigo == "POBLACION"))
+    assert {s.fuente.codigo: s.factor for s in poblacion.series_externas} == {"FMI_DM": None, "BM": 1e-6}
+    # La deuda del gobierno central (BM) es un indicador distinto de la del gobierno general (FMI).
+    central = sesion.scalar(select(Indicador).where(Indicador.codigo == "DEUDA_GOB_CENTRAL"))
+    assert [s.fuente.codigo for s in central.series_externas] == ["BM"]
+
+
+def test_metadatos_del_indicador_salen_de_la_primera_fila(sesion, tmp_path):
+    for nombre in ("fuentes.csv", "paises.csv"):
+        (tmp_path / nombre).write_text((DIR_SEMILLAS / nombre).read_text(encoding="utf-8"), encoding="utf-8")
+    (tmp_path / "indicadores.csv").write_text(
+        "codigo,nombre,unidad,escala,alcance,frecuencia,descripcion,fuente,codigo_externo,factor\n"
+        "X,Primero,U,Miles de millones,internacional,anual,,FMI_DM,XX,\n"
+        "X,Segundo,U,Unidades,internacional,anual,,BM,X.Y,1e-9\n",
+        encoding="utf-8",
+    )
+    cargar_semillas(sesion, tmp_path)
+    ind = sesion.scalar(select(Indicador).where(Indicador.codigo == "X"))
+    assert ind.nombre == "Primero" and ind.escala == "Miles de millones"
 
 
 def test_carga_semillas_es_idempotente(sesion):

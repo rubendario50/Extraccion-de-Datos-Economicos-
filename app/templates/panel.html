@@ -19,11 +19,18 @@
 
 <main id="contenido" class="panel">
   <form class="filtros" id="filtros" novalidate>
-    <div class="campo campo-indicador">
-      <label for="indicador">Indicador</label>
-      <select id="indicador" name="indicador">
-        {% for ind in datos.indicadores %}<option value="{{ ind.codigo }}">{{ ind.nombre }}</option>{% endfor %}
-      </select>
+    <div class="grupo-indicador">
+      <div class="campo campo-indicador">
+        <label for="indicador">Indicador</label>
+        <select id="indicador" name="indicador">
+          {% for ind in datos.indicadores %}<option value="{{ ind.codigo }}">{{ ind.nombre }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="campo campo-fuente">
+        <label for="fuente">Fuente</label>
+        <select id="fuente" name="fuente" aria-describedby="ayuda-fuente"></select>
+        <p class="ayuda" id="ayuda-fuente">Las fuentes no se mezclan: cada gráfica usa una sola.</p>
+      </div>
     </div>
 
     <div class="campo campo-paises">
@@ -81,7 +88,7 @@
         <button type="button" class="boton boton-secundario" id="reintentar" hidden>Reintentar</button>
       </div>
     </div>
-    <p class="fuente">Fuente: {{ datos.fuente }}</p>
+    <p class="fuente" id="fuente-serie">Fuente: {{ datos.fuente }}</p>
 
     <div class="tabla-cabeza">
       <h2 id="titulo-tabla">Valores</h2>

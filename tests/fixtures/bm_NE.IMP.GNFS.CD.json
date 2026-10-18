@@ -1,0 +1,66 @@
+[
+ {
+  "indicator": {
+   "id": "NE.IMP.GNFS.CD",
+   "value": "Imports of goods and services (current US$)"
+  },
+  "country": {
+   "id": "AR",
+   "value": "Argentina"
+  },
+  "countryiso3code": "ARG",
+  "date": "2020",
+  "value": 52454091268.1886,
+  "unit": "",
+  "obs_status": "",
+  "decimal": 0
+ },
+ {
+  "indicator": {
+   "id": "NE.IMP.GNFS.CD",
+   "value": "Imports of goods and services (current US$)"
+  },
+  "country": {
+   "id": "AR",
+   "value": "Argentina"
+  },
+  "countryiso3code": "ARG",
+  "date": "2010",
+  "value": 67937933972.3653,
+  "unit": "",
+  "obs_status": "",
+  "decimal": 0
+ },
+ {
+  "indicator": {
+   "id": "NE.IMP.GNFS.CD",
+   "value": "Imports of goods and services (current US$)"
+  },
+  "country": {
+   "id": "UY",
+   "value": "Uruguay"
+  },
+  "countryiso3code": "URY",
+  "date": "2020",
+  "value": 11538603068.7621,
+  "unit": "",
+  "obs_status": "",
+  "decimal": 0
+ },
+ {
+  "indicator": {
+   "id": "NE.IMP.GNFS.CD",
+   "value": "Imports of goods and services (current US$)"
+  },
+  "country": {
+   "id": "UY",
+   "value": "Uruguay"
+  },
+  "countryiso3code": "URY",
+  "date": "2010",
+  "value": 10636951485.0362,
+  "unit": "",
+  "obs_status": "",
+  "decimal": 0
+ }
+]
