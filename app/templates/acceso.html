@@ -1,49 +1,71 @@
 {% extends "base.html" %}
 {% block clase_body %}pagina-acceso{% endblock %}
+{% block cabeza %}{% if portada %}<script src="/static/js/portada.js?v={{ version }}" defer></script>{% endif %}{% endblock %}
 {% block cuerpo %}
+{% set lema = "Series del FMI y del Banco Mundial, y de Uruguay del INE y el BCU, para comparar países, años e índices." %}
 <main id="contenido" class="acceso{% if portada %} acceso-con-portada{% endif %}">
-  <div class="acceso-marca">
-    <span class="marca">Datos Económicos</span>
-    <p class="acceso-lema">Series del FMI y del Banco Mundial, y de Uruguay del INE y el BCU, para comparar países, años e índices.</p>
-  </div>
-  <div class="acceso-hoja">
-    {% block hoja %}{% endblock %}
+  <div class="acceso-columna">
+    <header class="acceso-marca">
+      <span class="marca">{% include "_logo.html" %}Datos Económicos</span>
+      {% include "_tema.html" %}
+    </header>
+    <div class="acceso-hoja">
+      {% block hoja %}{% endblock %}
+    </div>
+    {% if not portada %}<p class="acceso-lema">{{ lema }}</p>{% endif %}
   </div>
   {% if portada %}
   {# Muestra real de lo que hay adentro: sale de la base al armar la página, sin pedidos a la API. #}
   <section class="acceso-portada" aria-labelledby="titulo-portada">
-    <h2 class="oculto-visual" id="titulo-portada">Qué datos hay</h2>
+    <div class="portada-texto">
+      <h2 class="portada-titulo" id="titulo-portada"><span class="linea"><span>Datos oficiales,</span></span> <span class="linea"><span>listos para comparar</span></span></h2>
+      <p class="acceso-lema">{{ lema }}</p>
+    </div>
     {% set m = portada.muestra %}
     {% if m %}
-    <figure class="muestra">
+    <figure class="muestra" data-ui>
       <figcaption class="muestra-titulo">PBI en dólares corrientes, índice {{ m.base }} = 100</figcaption>
-      <svg class="muestra-grafica" viewBox="0 0 {{ m.ancho }} {{ m.alto }}" preserveAspectRatio="none"
-           role="img" aria-label="{{ m.descripcion }}" focusable="false">
-        <line class="muestra-base" x1="0" x2="{{ m.ancho }}" y1="{{ m.y_base }}" y2="{{ m.y_base }}" vector-effect="non-scaling-stroke"/>
-        {% for s in m.series %}
-        <polyline class="muestra-linea serie-{{ s.ranura }}" points="{{ s.trazo }}" vector-effect="non-scaling-stroke"/>
-        {% endfor %}
-      </svg>
-      <div class="muestra-eje" aria-hidden="true"><span>{{ m.desde }}</span><span>{{ m.hasta }}</span></div>
       <ul class="muestra-leyenda" aria-label="Valor en {{ m.hasta }}">
         {% for s in m.series %}
         <li class="serie-{{ s.ranura }}"><span class="leyenda-linea" aria-hidden="true"></span>{{ s.nombre }} <strong>{{ s.final_texto }}</strong></li>
         {% endfor %}
       </ul>
+      <div class="muestra-cuerpo">
+        <div class="muestra-marcas" aria-hidden="true">
+          {% for t in m.marcas %}<span>{{ t.texto }}</span>{% endfor %}
+        </div>
+        <svg class="muestra-grafica" viewBox="0 0 {{ m.ancho }} {{ m.alto }}" preserveAspectRatio="none"
+             role="img" aria-label="{{ m.descripcion }}" focusable="false">
+          {% for t in m.marcas %}
+          <line class="muestra-grilla" x1="0" x2="{{ m.ancho }}" y1="{{ t.y }}" y2="{{ t.y }}" vector-effect="non-scaling-stroke"/>
+          {% endfor %}
+          <line class="muestra-base" x1="0" x2="{{ m.ancho }}" y1="{{ m.y_base }}" y2="{{ m.y_base }}" vector-effect="non-scaling-stroke"/>
+          <g class="trazos-muestra">
+            {% for s in m.series %}
+            <polyline class="muestra-linea serie-{{ s.ranura }}" points="{{ s.trazo }}" vector-effect="non-scaling-stroke"/>
+            {% endfor %}
+          </g>
+        </svg>
+        <div class="muestra-eje" aria-hidden="true"><span>{{ m.desde }}</span><span>{{ m.hasta }}</span></div>
+      </div>
       <p class="muestra-nota">Fuente: FMI. Valores de {{ m.hasta }}; {{ m.base }} = 100.</p>
     </figure>
     {% endif %}
-    <dl class="cobertura">
-      {% for f in portada.fuentes %}
-      <div class="cobertura-fila">
-        <dt><abbr title="{{ f.nombre }}">{{ f.corto }}</abbr></dt>
-        <dd><span class="cobertura-anios">{{ f.desde }}–{{ f.hasta }}</span> {{ f.que }}</dd>
-      </div>
-      {% endfor %}
-    </dl>
+    <div class="tablero">
     {% if portada.paises %}
-    <p class="cobertura-paises">{{ portada.paises }} países{% if portada.regiones %} y {{ portada.regiones }} regiones{% endif %} para comparar, hasta ocho por gráfica.</p>
+    <p class="cobertura-paises"><span class="cobertura-cifra"><span data-contar>{{ portada.paises }}</span> países{% if portada.regiones %} y <span data-contar>{{ portada.regiones }}</span> regiones{% endif %}</span> para comparar, hasta ocho por gráfica.</p>
     {% endif %}
+    <ul class="cobertura" aria-label="Fuentes y años con datos">
+      {% for f in portada.fuentes %}
+      <li class="cobertura-fila">
+        <abbr title="{{ f.nombre }}">{{ f.corto }}</abbr>
+        <span class="cobertura-anios">{{ f.anios }}</span>
+        {% if f.proyecciones_hasta %}<span class="cobertura-proyeccion">proyecciones hasta {{ f.proyecciones_hasta }}</span>{% endif %}
+        <span class="cobertura-que">{{ f.que }}</span>
+      </li>
+      {% endfor %}
+    </ul>
+    </div>
   </section>
   {% endif %}
 </main>

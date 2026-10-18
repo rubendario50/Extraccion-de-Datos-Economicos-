@@ -409,3 +409,35 @@ def test_serie_de_uruguay_sin_leyenda_ni_etiqueta_final(pagina):
     esperar_carga(pagina)
     assert pagina.locator("#leyenda button.leyenda-item").count() >= 1
     assert pagina.locator("#ayuda-fuente").is_visible()
+
+
+def test_eje_y_legible_con_valores_chicos_del_ipc(pagina):
+    # El IPC de 1937 vale ~0,00000016 (base 2022): el eje no puede mostrar todas las marcas como "0".
+    pagina.goto(f"{BASE}/?indicador=IPC_UY&desde=1937&hasta=1937")
+    esperar_carga(pagina)
+    etiquetas = pagina.evaluate(
+        """() => {
+            const g = echarts.getInstanceByDom(document.getElementById('grafica'));
+            const eje = g.getModel().getComponent('yAxis', 0).axis;
+            const fmt = g.getOption().yAxis[0].axisLabel.formatter;
+            return eje.scale.getTicks().map((t) => fmt(t.value));
+        }"""
+    )
+    assert len(set(etiquetas)) == len(etiquetas), etiquetas
+
+
+def test_tema_oscuro_por_defecto_y_claro_recordado(pagina):
+    # La identidad es oscura aunque el sistema pida claro; el botón cambia al claro y la elección queda guardada.
+    pagina.emulate_media(color_scheme="light")
+    pagina.goto(f"{BASE}/?indicador=PBI_USD_CORR&paises=URY")
+    esperar_carga(pagina)
+    assert pagina.evaluate("() => document.documentElement.dataset.tema") == "oscuro"
+    boton = pagina.locator(".barra [data-cambiar-tema]")
+    assert boton.get_attribute("aria-pressed") == "false"
+    fondo_oscuro = pagina.evaluate("() => getComputedStyle(document.body).backgroundColor")
+    boton.click()
+    assert pagina.evaluate("() => document.documentElement.dataset.tema") == "claro"
+    assert boton.get_attribute("aria-pressed") == "true"
+    assert pagina.evaluate("() => getComputedStyle(document.body).backgroundColor") != fondo_oscuro
+    pagina.goto(f"{BASE}/login")
+    assert pagina.evaluate("() => document.documentElement.dataset.tema") == "claro"

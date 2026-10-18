@@ -11,7 +11,7 @@ Plataforma de recopilación, análisis y difusión de datos económicos internac
 
 ## Estado
 
-Versión actual: 0.2.2 (ver `CHANGELOG.md`).
+Versión actual: 0.2.4 (ver `CHANGELOG.md`).
 
 Desde la 0.1: base de datos PostgreSQL en Podman, tabla maestra de países (`data/seed/paises.csv`), carga del PBI del FMI DataMapper (PBI en dólares corrientes y crecimiento real) y una web con login (contraseña o Google, doble factor obligatorio) donde se eligen indicador, países y años y se ven la gráfica y la tabla, con opción de índice base 100. La arquitectura está en `docs/arquitectura.md`.
 

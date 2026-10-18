@@ -1,0 +1,54 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-18T20:00:00-03:00",
+  "title": "Design System: Datos Económicos",
+  "extensions": {
+    "colorMeta": {
+      "noche": { "role": "neutral", "displayName": "Noche", "tonalRamp": ["#070b14", "#0f1626", "#151d30", "#1c2640"] },
+      "cian": { "role": "primary", "displayName": "Cian eléctrico", "tonalRamp": ["#0e7490", "#06b6d4", "#22d3ee", "#67e8f9"] },
+      "vidrio": { "role": "neutral", "displayName": "Vidrio esmerilado" }
+    },
+    "typographyMeta": {
+      "display": { "displayName": "Display", "purpose": "Título de la portada, dos líneas que asoman." },
+      "cifras": { "displayName": "Cifras", "purpose": "Tabla, ejes, años, valores y códigos en Geist Mono." }
+    },
+    "shadows": [
+      { "name": "vidrio", "value": "inset 0 1px 0 rgb(255 255 255 / 0.05), 0 1px 2px rgb(0 0 0 / 0.4), 0 24px 48px -24px rgb(0 0 0 / 0.7)", "purpose": "Tarjetas de vidrio sobre la noche." },
+      { "name": "resplandor", "value": "0 0 0 1px rgb(34 211 238 / 0.5), 0 0 22px rgb(34 211 238 / 0.35)", "purpose": "Botón principal al pasar o enfocar." },
+      { "name": "flotante", "value": "0 0 0 1px rgb(148 180 255 / 0.14), 0 4px 8px -2px rgb(0 0 0 / 0.5), 0 18px 36px -8px rgb(0 0 0 / 0.7)", "purpose": "Menús desplegables." }
+    ],
+    "motion": [
+      { "name": "salida", "value": "cubic-bezier(0.23, 1, 0.32, 1)", "purpose": "Entradas y presionado." },
+      { "name": "estado", "value": "150ms ease", "purpose": "Color, borde y fondo al pasar." },
+      { "name": "trazo", "value": "1300ms salida, 520ms de espera", "purpose": "Las líneas de la muestra se dibujan una vez." }
+    ],
+    "breakpoints": [
+      { "name": "chico", "value": "420px" },
+      { "name": "celular", "value": "760px" },
+      { "name": "portada-apilada", "value": "1023px" },
+      { "name": "filtros-2-columnas", "value": "1100px" }
+    ]
+  },
+  "components": [
+    { "name": "Botón principal", "kind": "button", "refersTo": "button-primary", "description": "Acción principal.",
+      "html": "<button class=\"ds-btn\">Ingresar</button>",
+      "css": ".ds-btn{background:#22d3ee;color:#04121a;font:600 14px Geist,system-ui;padding:8px 16px;min-height:40px;border:0;border-radius:8px;box-shadow:inset 0 1px 0 rgb(255 255 255/.35);transition:background-color 150ms,box-shadow 150ms,transform 160ms cubic-bezier(.23,1,.32,1)}.ds-btn:hover{background:#67e8f9;box-shadow:0 0 0 1px rgb(34 211 238/.5),0 0 22px rgb(34 211 238/.35)}.ds-btn:active{transform:scale(.97)}" },
+    { "name": "Campo", "kind": "input", "refersTo": "input", "description": "Campo de texto.",
+      "html": "<input class=\"ds-in\" placeholder=\"Email\">",
+      "css": ".ds-in{background:#0f1626;color:#e8edf7;border:1px solid #5d6a85;border-radius:8px;min-height:40px;padding:8px 12px;font:16px Geist,system-ui}.ds-in:focus{outline:none;border-color:#22d3ee;box-shadow:0 0 0 3px rgb(34 211 238/.25)}" },
+    { "name": "Tarjeta de vidrio", "kind": "card", "refersTo": "card", "description": "Contenedor del panel y la portada.",
+      "html": "<div class=\"ds-card\">Valores</div>",
+      "css": ".ds-card{background:rgb(15 22 38/.62);backdrop-filter:blur(16px) saturate(140%);border:1px solid rgb(148 180 255/.13);border-radius:14px;padding:24px;color:#e8edf7;box-shadow:inset 0 1px 0 rgb(255 255 255/.05),0 24px 48px -24px rgb(0 0 0/.7)}" }
+  ],
+  "narrative": {
+    "northStar": "El producto trabajando de noche",
+    "overview": "Noche azul con vidrio y un único acento cian; los brillos solo donde hay datos o acciones; contraste AA real para todo lo que se lee.",
+    "keyCharacteristics": ["Oscuro por identidad, claro como alternativa elegida", "Cifras en Geist Mono", "Series con color constante en todo el panel"],
+    "rules": [
+      { "name": "La regla del acento único", "body": "El cian es el único color de interfaz; el resto del color vive en las series.", "section": "colors" },
+      { "name": "La regla del dato legible", "body": "El brillo nunca reemplaza al contraste.", "section": "elevation" }
+    ],
+    "dos": ["Usar el cian solo para acción, foco, selección y la serie 1."],
+    "donts": ["No usar neón como color de texto de párrafos ni de fondos grandes."]
+  }
+}

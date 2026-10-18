@@ -181,3 +181,58 @@ def test_datos_portada_hasta_el_ultimo_anio_cerrado(sesion_con_semillas, cliente
     # Sin el año base no hay muestra, pero sí la cobertura.
     p = datos_portada(sesion_con_semillas, hoy=date(2000, 6, 1))
     assert p["muestra"] is None and p["fuentes"][0]["corto"] == "FMI"
+
+
+def test_portada_separa_las_proyecciones_del_fmi(sesion_con_semillas, cliente_fmi):
+    from datetime import date
+
+    from app.web.portada import datos_portada
+
+    cargar_fmi(sesion_con_semillas, cliente_fmi, espera=0)
+    # En 2011 los años 2011 a 2024 del fixture son proyecciones: el rango llega al último año cerrado.
+    fmi = datos_portada(sesion_con_semillas, hoy=date(2011, 6, 1))["fuentes"][0]
+    assert fmi["anios"] == "1980–2010" and fmi["proyecciones_hasta"] == 2024
+    # Con todos los años cerrados no hay nada que aclarar.
+    fmi = datos_portada(sesion_con_semillas, hoy=date(2026, 6, 1))["fuentes"][0]
+    assert fmi["anios"] == "1980–2024" and fmi["proyecciones_hasta"] is None
+
+
+def test_portada_aclara_las_proyecciones_en_la_pagina(cliente_web, sesion_con_semillas, cliente_fmi, monkeypatch):
+    from datetime import date
+
+    from app.web import portada
+
+    cargar_fmi(sesion_con_semillas, cliente_fmi, espera=0)
+
+    class Hoy(date):
+        @classmethod
+        def today(cls):
+            return date(2011, 6, 1)
+
+    monkeypatch.setattr(portada, "date", Hoy)
+    html = cliente_web.get("/login").text
+    assert "1980–2010" in html and "proyecciones hasta 2024" in html and "1980–2024" not in html
+
+
+def test_rango_de_un_solo_anio():
+    from app.web.portada import rango
+
+    assert rango(2026, 2026) == "2026"
+    assert rango(2000, 2026) == "2000–2026"
+
+
+def test_datos_portada_se_guardan_unos_minutos(sesion_con_semillas, cliente_fmi, monkeypatch):
+    from app.web import portada
+
+    cargar_fmi(sesion_con_semillas, cliente_fmi, espera=0)
+    llamadas = []
+    original = portada._armar
+    monkeypatch.setattr(portada, "_armar", lambda db, hoy: llamadas.append(hoy) or original(db, hoy))
+    reloj = [1000.0]
+    monkeypatch.setattr(portada.time, "monotonic", lambda: reloj[0])
+
+    primero = portada.datos_portada(sesion_con_semillas)
+    assert portada.datos_portada(sesion_con_semillas) is primero and len(llamadas) == 1
+    reloj[0] += portada.CACHE_SEGUNDOS + 1  # vencido: se vuelve a consultar
+    portada.datos_portada(sesion_con_semillas)
+    assert len(llamadas) == 2

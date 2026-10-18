@@ -15,6 +15,41 @@ y el proyecto usa [versionado semántico](https://semver.org/lang/es/).
 - Decidir qué hacer con el error de origen del BCU del 27/04/2000 (venta
   1,905).
 
+## [0.2.4] - 2026-10-18
+
+Nueva identidad visual.
+
+### Cambiado
+
+- **Nueva identidad visual futurista**: tema oscuro azul noche por defecto,
+  con tarjetas de vidrio, acento cian y tipografía Geist, con las cifras en
+  Geist Mono.
+- **Modo claro** disponible con un botón; el sistema recuerda la elección.
+- **Portada nueva** con la gráfica del PBI animada y mosaicos con las fuentes
+  de datos.
+- Animaciones suaves que respetan la preferencia de movimiento reducido del
+  sistema.
+
+### Corregido
+
+- El eje de la gráfica del IPC mostraba "0" cuando los valores eran chicos.
+- La portada aclara que los datos del FMI incluyen proyecciones hasta 2031.
+- Un rango de un solo año se muestra como un año y no como un intervalo.
+- La portada carga más rápido (los datos se guardan en caché 5 minutos).
+
+## [0.2.3] - 2026-10-18
+
+Mejoras de la portada y de la presentación de los datos.
+
+### Cambiado
+
+- La portada muestra una gráfica real del PBI y la cobertura de cada fuente
+  de datos.
+- En las series mensuales y diarias, la tabla se agrupa por año y la columna
+  del año queda fija al desplazarse.
+- Los datos de Uruguay se muestran como una serie única.
+- Mejor formato de los números en la gráfica y en la tabla.
+
 ## [0.2.2] - 2026-10-18
 
 Primeros datos propios de Uruguay.
@@ -121,7 +156,10 @@ Primera versión funcional del sistema.
 - **Instalación con contenedores**: archivos listos para levantar la aplicación
   y la base de datos con Podman.
 
-[Pendiente]: https://github.com/rubendario50/Extraccion-de-Datos-Economicos-/compare/v0.2.1...HEAD
+[Pendiente]: https://github.com/rubendario50/Extraccion-de-Datos-Economicos-/compare/v0.2.4...HEAD
+[0.2.4]: https://github.com/rubendario50/Extraccion-de-Datos-Economicos-/compare/v0.2.3...v0.2.4
+[0.2.3]: https://github.com/rubendario50/Extraccion-de-Datos-Economicos-/compare/v0.2.2...v0.2.3
+[0.2.2]: https://github.com/rubendario50/Extraccion-de-Datos-Economicos-/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/rubendario50/Extraccion-de-Datos-Economicos-/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/rubendario50/Extraccion-de-Datos-Economicos-/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/rubendario50/Extraccion-de-Datos-Economicos-/releases/tag/v0.1.0

@@ -44,7 +44,8 @@
 
   // ---------- Formato de números ----------
 
-  const fmtEje = new Intl.NumberFormat("es-UY", { maximumFractionDigits: 1 });
+  // Marcas del eje: son números redondos, así que alcanza con no redondearlas (hasta 6 cifras significativas).
+  const fmtEje = new Intl.NumberFormat("es-UY", { maximumSignificantDigits: 6 });
   let fmtValor = new Intl.NumberFormat("es-UY", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 
   // Las cotizaciones diarias (dólar del BCU) se publican con 3 decimales; el resto, según su tamaño.
@@ -59,6 +60,13 @@
   // Siempre 3 cifras (0,00680 y no 0,0068) para que la columna se lea pareja.
   const fmtChico = new Intl.NumberFormat("es-UY", { minimumSignificantDigits: 3, maximumSignificantDigits: 3 });
   const formatear = (v) => (v == null ? "—" : v !== 0 && Math.abs(v) < 0.01 ? fmtChico.format(v) : fmtValor.format(v));
+
+  // Eje vertical. 180000 -> "180 mil" (el sufijo "k" no se usa en español). Los valores muy chicos
+  // (el IPC de 1937) van con cifras significativas, como en la tabla: al menos 3 (0,000000160) y las que
+  // hagan falta para que marcas vecinas no se lean iguales (0,0000001595 y 0,000000160).
+  const fmtChicoEje = new Intl.NumberFormat("es-UY", { minimumSignificantDigits: 3, maximumSignificantDigits: 6 });
+  const formatoEje = (v) =>
+    Math.abs(v) >= 10000 ? `${fmtEje.format(v / 1000)} mil` : v !== 0 && Math.abs(v) < 0.01 ? fmtChicoEje.format(v) : fmtEje.format(v);
 
   // ---------- Fechas (series mensuales y diarias de Uruguay) ----------
 
@@ -529,9 +537,17 @@
 
   let grafica = null;
 
+  // "rgb(34 211 238 / 0.12)" -> "rgba(34, 211, 238, 0.12)": ECharts calcula sobre los colores y no lee la sintaxis nueva.
+  function normalizarColor(c) {
+    const m = /^rgba?\(\s*([\d.]+)[\s,]+([\d.]+)[\s,]+([\d.]+)\s*(?:[/,]\s*([\d.]+%?))?\s*\)$/.exec(c);
+    if (!m) return c;
+    const a = m[4] == null ? 1 : m[4].endsWith("%") ? parseFloat(m[4]) / 100 : Number(m[4]);
+    return `rgba(${m[1]}, ${m[2]}, ${m[3]}, ${a})`;
+  }
+
   function colores() {
     const css = getComputedStyle(document.documentElement);
-    const v = (n) => css.getPropertyValue(n).trim();
+    const v = (n) => normalizarColor(css.getPropertyValue(n).trim());
     const series = {};
     for (let i = 1; i <= MAX_SERIES; i++) series[i] = v(`--serie-${i}`);
     return {
@@ -541,12 +557,22 @@
       tinta3: v("--tinta-3"),
       superficie: v("--superficie"),
       superficie2: v("--superficie-2"),
-      bordeSuave: v("--borde-suave"),
+      bordeSuave: v("--borde"),
       grilla: v("--grafica-grilla"),
       eje: v("--grafica-eje"),
+      zoom: v("--grafica-zoom"),
+      brillo: v("--grafica-brillo") === "1",
+      bordeControl: v("--borde-control"),
       acento: v("--acento"),
       fuente: v("--fuente"),
+      cifras: v("--fuente-cifras"),
     };
+  }
+
+  // "#2f55e4" -> "rgba(47, 85, 228, a)" (para el relleno suave de la serie única).
+  function conAlfa(hex, a) {
+    const n = parseInt(hex.replace("#", ""), 16);
+    return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${a})`;
   }
 
   function textoUnidad(indicador) {
@@ -652,10 +678,27 @@
         showSymbol: false,
         symbol: "circle",
         symbolSize: 8,
-        lineStyle: { width: 2 },
+        // En el tema oscuro cada línea lleva un brillo suave de su color (más tenue con muchas series).
+        lineStyle: {
+          width: 2,
+          ...(c.brillo && /^#[0-9a-f]{6}$/i.test(c.series[slot(s)])
+            ? { shadowColor: conAlfa(c.series[slot(s)], pocas ? 0.55 : 0.35), shadowBlur: pocas ? 10 : 6 }
+            : {}),
+        },
         itemStyle: { color: c.series[slot(s)], borderColor: c.superficie, borderWidth: 2 },
         emphasis: { focus: "series", lineStyle: { width: 2.5 } },
-        blur: { lineStyle: { opacity: 0.25 } },
+        blur: { lineStyle: { opacity: 0.2 } },
+        // La serie única de Uruguay lleva un relleno suave que se desvanece hacia abajo.
+        ...(nacional && /^#[0-9a-f]{6}$/i.test(c.series[slot(s)])
+          ? {
+              areaStyle: {
+                color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                  { offset: 0, color: conAlfa(c.series[slot(s)], 0.16) },
+                  { offset: 1, color: conAlfa(c.series[slot(s)], 0) },
+                ]),
+              },
+            }
+          : {}),
         // Una serie sin datos no dibuja etiqueta (si no, queda encimada sobre las otras).
         endLabel: {
           show: etiquetas && !vacia[i],
@@ -681,8 +724,6 @@
       return serie;
     });
 
-    // 180000 -> "180 mil" (el sufijo "k" no se usa en español).
-    const formatoEje = (v) => (Math.abs(v) >= 10000 ? `${fmtEje.format(v / 1000)} mil` : fmtEje.format(v));
 
     grafica.setOption(
       {
@@ -692,7 +733,7 @@
         animationEasingUpdate: "cubicOut",
         textStyle: { fontFamily: c.fuente, color: c.tinta2 },
         color: cuerpo.series.map((s) => c.series[slot(s)]),
-        grid: { left: 8, right: etiquetas ? 112 : 16, top: 16, bottom: 64, containLabel: true },
+        grid: { left: 4, right: etiquetas ? 112 : 12, top: 16, bottom: 64, containLabel: true },
         // La leyenda va en HTML (arriba de la gráfica) para que nunca tape el eje en pantallas angostas.
         legend: { show: false, selected: Object.fromEntries(cuerpo.series.map((s) => [s.nombre, !ocultas.has(s.pais)])) },
         tooltip: {
@@ -701,9 +742,10 @@
           backgroundColor: c.superficie,
           borderColor: c.bordeSuave,
           borderWidth: 1,
-          padding: [8, 12],
+          padding: [10, 12],
+          transitionDuration: 0.15,
           textStyle: { color: c.tinta, fontFamily: c.fuente },
-          axisPointer: { type: "line", lineStyle: { color: c.eje, width: 1 } },
+          axisPointer: { type: "line", lineStyle: { color: c.bordeControl, width: 1, type: [3, 3] } },
           formatter: (params) => {
             const filas = params
               .filter((p) => !vacia[p.seriesIndex])
@@ -726,7 +768,7 @@
               axisLine: { lineStyle: { color: c.eje } },
               axisTick: { show: false },
               splitLine: { show: false },
-              axisLabel: { color: c.tinta3, fontSize: 12, hideOverlap: true, formatter: etiquetaEjeTiempo },
+              axisLabel: { color: c.tinta3, fontFamily: c.cifras, fontSize: 12, margin: 12, hideOverlap: true, formatter: etiquetaEjeTiempo },
             }
           : {
               type: "category",
@@ -737,7 +779,9 @@
               // Con etiquetas de fin de línea, los años de los extremos van hacia adentro para no pisarlas.
               axisLabel: {
                 color: c.tinta3,
+                fontFamily: c.cifras,
                 fontSize: 12,
+                margin: 12,
                 hideOverlap: true,
                 ...(etiquetas ? { alignMinLabel: "left", alignMaxLabel: "right" } : {}),
               },
@@ -746,7 +790,9 @@
           type: "value",
           // En las series de Uruguay (cotizaciones, tasas) el eje se ajusta a los datos en vez de arrancar en 0.
           scale: conFechas,
-          axisLabel: { color: c.tinta3, fontSize: 12, formatter: formatoEje },
+          axisLabel: { color: c.tinta3, fontFamily: c.cifras, fontSize: 12, margin: 12, formatter: formatoEje },
+          axisLine: { show: false },
+          axisTick: { show: false },
           splitLine: { lineStyle: { color: c.grilla } },
         },
         dataZoom: [
@@ -755,17 +801,19 @@
             type: "slider",
             xAxisIndex: 0,
             filterMode: "none",
-            height: 22,
+            height: 24,
             bottom: 8,
             borderColor: c.bordeSuave,
-            backgroundColor: c.superficie,
-            fillerColor: "rgba(127, 140, 150, 0.16)",
-            dataBackground: { lineStyle: { color: c.eje, width: 1 }, areaStyle: { color: c.superficie2 } },
-            selectedDataBackground: { lineStyle: { color: c.acento, width: 1 }, areaStyle: { color: c.superficie2 } },
-            handleStyle: { color: c.superficie, borderColor: c.eje },
-            moveHandleStyle: { color: c.superficie2, borderColor: c.eje },
-            emphasis: { handleStyle: { borderColor: c.acento }, moveHandleStyle: { color: c.eje } },
-            textStyle: { color: c.tinta3, fontFamily: c.fuente, fontSize: 11 },
+            borderRadius: 6,
+            backgroundColor: c.superficie2,
+            fillerColor: c.zoom,
+            dataBackground: { lineStyle: { color: c.eje, width: 1 }, areaStyle: { color: c.superficie2, opacity: 0 } },
+            selectedDataBackground: { lineStyle: { color: c.acento, width: 1 }, areaStyle: { color: c.zoom } },
+            handleIcon: "path://M2,0 L6,0 Q8,0 8,2 L8,22 Q8,24 6,24 L2,24 Q0,24 0,22 L0,2 Q0,0 2,0 Z",
+            handleSize: "100%",
+            handleStyle: { color: c.superficie, borderColor: c.bordeControl, borderWidth: 1 },
+            emphasis: { handleStyle: { borderColor: c.acento } },
+            textStyle: { color: c.tinta3, fontFamily: c.cifras, fontSize: 12 },
             ...(conFechas ? { labelFormatter: (v) => textoPeriodo(v, frecuencia) } : {}),
             brushSelect: false,
           },
@@ -885,7 +933,7 @@
   prepararAnios();
   pintarFichas();
 
-  window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", alCambiarTema);
+  document.addEventListener("cambio-tema", alCambiarTema);
   new ResizeObserver(() => grafica && grafica.resize()).observe(el.grafica);
   new ResizeObserver(medirCabeza).observe(el.tabla.tHead);
   // Esperar la fuente para que el canvas no dibuje con la de reserva.

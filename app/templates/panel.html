@@ -7,8 +7,10 @@
 {% endblock %}
 {% block cuerpo %}
 <header class="barra">
-  <a class="marca" href="/">Datos Económicos</a>
+  <a class="marca" href="/">{% include "_logo.html" %}Datos Económicos</a>
   <div class="barra-usuario">
+    {% include "_tema.html" %}
+    <span class="avatar" aria-hidden="true">{{ (usuario.nombre or usuario.email)[:1] | upper }}</span>
     <span class="barra-nombre">{{ usuario.nombre }}</span>
     <form method="post" action="/salir">
       <input type="hidden" name="csrf" value="{{ csrf }}">
@@ -85,31 +87,35 @@
   </form>
 
   <section class="resultado" aria-labelledby="titulo-serie">
-    <div class="resultado-cabeza">
-      <h1 id="titulo-serie">{{ datos.indicadores[0].nombre if datos.indicadores else "Sin indicadores" }}</h1>
-      <p class="unidad" id="unidad-serie"></p>
-      <p class="ayuda" id="nota-faltantes" hidden></p>
-    </div>
-    <ul class="leyenda" id="leyenda" aria-label="Series de la gráfica (tocá una para ocultarla o mostrarla)"></ul>
-    <div class="grafica-marco">
-      <div class="grafica" id="grafica" role="img" aria-label="Gráfica de líneas de la serie elegida"></div>
-      <div class="estado" id="estado" role="status" aria-live="polite" hidden>
-        <p class="estado-titulo" id="estado-titulo"></p>
-        <p class="estado-texto" id="estado-texto"></p>
-        <button type="button" class="boton boton-secundario" id="reintentar" hidden>Reintentar</button>
+    <div class="tarjeta tarjeta-grafica">
+      <div class="resultado-cabeza">
+        <h1 id="titulo-serie">{{ datos.indicadores[0].nombre if datos.indicadores else "Sin indicadores" }}</h1>
+        <p class="unidad" id="unidad-serie"></p>
+        <p class="ayuda" id="nota-faltantes" hidden></p>
       </div>
+      <ul class="leyenda" id="leyenda" aria-label="Series de la gráfica (tocá una para ocultarla o mostrarla)"></ul>
+      <div class="grafica-marco">
+        <div class="grafica" id="grafica" role="img" aria-label="Gráfica de líneas de la serie elegida"></div>
+        <div class="estado" id="estado" role="status" aria-live="polite" hidden>
+          <p class="estado-titulo" id="estado-titulo"></p>
+          <p class="estado-texto" id="estado-texto"></p>
+          <button type="button" class="boton boton-secundario" id="reintentar" hidden>Reintentar</button>
+        </div>
+      </div>
+      <p class="fuente" id="fuente-serie">Fuente: {{ datos.fuente }}</p>
     </div>
-    <p class="fuente" id="fuente-serie">Fuente: {{ datos.fuente }}</p>
 
-    <div class="tabla-cabeza">
-      <h2 id="titulo-tabla">Valores</h2>
-      <p class="ayuda" id="nota-tabla"></p>
-    </div>
-    <div class="tabla-marco" tabindex="0" role="region" aria-labelledby="titulo-tabla">
-      <table class="tabla" id="tabla">
-        <thead></thead>
-        <tbody></tbody>
-      </table>
+    <div class="tarjeta tarjeta-tabla">
+      <div class="tabla-cabeza">
+        <h2 id="titulo-tabla">Valores</h2>
+        <p class="ayuda" id="nota-tabla"></p>
+      </div>
+      <div class="tabla-marco" tabindex="0" role="region" aria-labelledby="titulo-tabla">
+        <table class="tabla" id="tabla">
+          <thead></thead>
+          <tbody></tbody>
+        </table>
+      </div>
     </div>
   </section>
 </main>
