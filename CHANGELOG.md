@@ -7,13 +7,40 @@ y el proyecto usa [versionado semántico](https://semver.org/lang/es/).
 
 ## [Pendiente]
 
+### Por hacer
+
 - Verificación del email al registrarse y recuperación de contraseña.
-- Marcar en la gráfica y en la tabla los años que son proyecciones del FMI.
 - Pedir autorización al BCU antes de redistribuir o cobrar por sus datos: sus
   términos solo permiten la reproducción sin fines de lucro, citando la
   fuente.
 - Decidir qué hacer con el error de origen del BCU del 27/04/2000 (venta
   1,905).
+
+## [0.2.5] - 2026-10-20
+
+Proyecciones del FMI marcadas.
+
+### Agregado
+
+- **Proyecciones del FMI marcadas**: en la gráfica, el tramo proyectado de
+  cada línea es punteado y una banda «Proyección del FMI» cubre esos años; en
+  la tabla, esas filas llevan «proy.» junto al año y una nota que lo explica.
+  El tooltip también lo aclara.
+- La API (`/api/series`) indica desde qué año proyecta el FMI y marca cada dato
+  proyectado. Los datos del Banco Mundial, del INE y del BCU no llevan la marca.
+- El FMI no informa por país cuál es su último dato real: se toma como
+  proyección todo año desde el de la edición del informe del FMI (World
+  Economic Outlook) cargada, o desde el año en curso si es anterior.
+- Si el FMI responde de forma inesperada al consultar la edición de su
+  informe, la carga de datos sigue igual y la proyección se marca desde el año
+  en curso.
+
+### Para actualizar
+
+- Hay que reconstruir la imagen (`podman-compose up -d --build`; si el
+  contenedor no cambia, agregar `--force-recreate`) para aplicar la nueva
+  migración, y volver a cargar el FMI (`python -m app.etl fmi`) para guardar la
+  edición de sus datos.
 
 ## [0.2.4] - 2026-10-18
 
@@ -156,7 +183,8 @@ Primera versión funcional del sistema.
 - **Instalación con contenedores**: archivos listos para levantar la aplicación
   y la base de datos con Podman.
 
-[Pendiente]: https://github.com/rubendario50/Extraccion-de-Datos-Economicos-/compare/v0.2.4...HEAD
+[Pendiente]: https://github.com/rubendario50/Extraccion-de-Datos-Economicos-/compare/v0.2.5...HEAD
+[0.2.5]: https://github.com/rubendario50/Extraccion-de-Datos-Economicos-/compare/v0.2.4...v0.2.5
 [0.2.4]: https://github.com/rubendario50/Extraccion-de-Datos-Economicos-/compare/v0.2.3...v0.2.4
 [0.2.3]: https://github.com/rubendario50/Extraccion-de-Datos-Economicos-/compare/v0.2.2...v0.2.3
 [0.2.2]: https://github.com/rubendario50/Extraccion-de-Datos-Economicos-/compare/v0.2.1...v0.2.2

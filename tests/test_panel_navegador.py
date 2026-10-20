@@ -12,7 +12,7 @@ from datetime import date
 import httpx
 import pytest
 import uvicorn
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, update
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -28,7 +28,7 @@ from app.etl.fmi import cargar_fmi  # noqa: E402
 from app.etl.ine import cargar_ine  # noqa: E402
 from app.etl.semillas import cargar_semillas  # noqa: E402
 from app.main import app as aplicacion  # noqa: E402
-from app.models import Sesion, Usuario  # noqa: E402
+from app.models import IndicadorSerieExterna, Sesion, Usuario  # noqa: E402
 from tests.ayudas import PASSWORD  # noqa: E402
 from tests.conftest import transporte_bcu, transporte_bm, transporte_fmi, transporte_ine  # noqa: E402
 
@@ -46,6 +46,9 @@ def servidor():
         cargar_semillas(s)
         with httpx.Client(transport=transporte_fmi(), base_url="https://fmi.test") as c:
             cargar_fmi(s, c, espera=0)
+        # Como si el PBI del FMI fuera de la edición del WEO de 2011: su dato de 2024 queda como proyección.
+        s.execute(update(IndicadorSerieExterna).where(IndicadorSerieExterna.codigo_externo == "NGDPD")
+                  .values(proyeccion_desde=2011))
         with httpx.Client(transport=transporte_bm(), base_url="https://bm.test") as c:
             cargar_bm(s, c, espera=0)
         with httpx.Client(transport=transporte_ine(), base_url="https://ine.test/documents") as c:
@@ -121,9 +124,14 @@ def test_serie_sin_datos_en_la_fuente_no_dibuja_etiqueta(pagina):
     esperar_carga(pagina)
     etiquetas = pagina.evaluate(
         """() => echarts.getInstanceByDom(document.getElementById('grafica')).getOption()
-                  .series.map((s) => [s.name, s.endLabel.show])"""
+                  .series.map((s) => [s.name, Boolean(s.endLabel && s.endLabel.show)])"""
     )
-    assert dict(etiquetas) == {"Uruguay": True, "Brasil": False, "Argentina": True}
+    por_pais = {}
+    for nombre, visible in etiquetas:
+        if nombre != "Proyección del FMI":  # la serie auxiliar de la banda
+            por_pais.setdefault(nombre, []).append(visible)
+    # El 2024 del PBI es proyección en el servidor de prueba: la etiqueta va al final del tramo punteado.
+    assert por_pais == {"Uruguay": [False, True], "Brasil": [False], "Argentina": [False, True]}
     # En la leyenda figura como "sin datos en esta fuente" y no se puede ocultar (no es un botón).
     vacia = pagina.locator(".leyenda-vacia")
     assert vacia.count() == 1
@@ -441,3 +449,130 @@ def test_tema_oscuro_por_defecto_y_claro_recordado(pagina):
     assert pagina.evaluate("() => getComputedStyle(document.body).backgroundColor") != fondo_oscuro
     pagina.goto(f"{BASE}/login")
     assert pagina.evaluate("() => document.documentElement.dataset.tema") == "claro"
+
+
+# --- Proyecciones del FMI (en el servidor de prueba, el PBI del FMI se proyecta desde 2011: su 2024 lo es) ---
+
+def series_de_la_grafica(pg):
+    return opcion_grafica(pg, """o.series.map((s) => ({
+        nombre: s.name, data: s.data, punteada: Array.isArray(s.lineStyle && s.lineStyle.type),
+        banda: s.markArea && s.markArea.data && s.markArea.data.length ? s.markArea.data[0].map((p) => p.xAxis) : null }))""")
+
+
+def test_proyecciones_del_fmi_en_la_grafica(pagina):
+    pagina.goto(f"{BASE}/?indicador=PBI_USD_CORR&fuente=FMI_DM&paises=URY,ARG")
+    esperar_carga(pagina)
+    assert opcion_grafica(pagina, "o.xAxis[0].data") == ["1980", "2000", "2010", "2024"]
+    series = series_de_la_grafica(pagina)
+    # Primero la serie auxiliar de la banda: va del último año real (donde arranca el punteado) al final.
+    assert series[0]["nombre"] == "Proyección del FMI" and series[0]["banda"] == ["2010", "2024"]
+    tramos = {(s["nombre"], s["punteada"]): s["data"] for s in series[1:]}
+    assert tramos[("Argentina", False)] == [233.696, 317.759, 424.729, None]
+    assert tramos[("Argentina", True)] == [None, None, 424.729, 637.744]
+    assert ("Uruguay", True) in tramos
+    # Clave en la leyenda (no es un botón) y descripción para lectores de pantalla.
+    assert pagina.inner_text(".leyenda-proyeccion") == "Proyección del FMI desde 2024"
+    assert pagina.locator("button.leyenda-item").count() == 2
+    assert "Desde 2024, proyección del FMI (línea punteada)." in pagina.get_attribute("#grafica", "aria-label")
+
+
+def test_proyecciones_del_fmi_en_el_tooltip_y_la_leyenda(pagina):
+    pagina.goto(f"{BASE}/?indicador=PBI_USD_CORR&fuente=FMI_DM&paises=URY,ARG")
+    esperar_carga(pagina)
+    xy = pagina.evaluate("""() => { const g = echarts.getInstanceByDom(document.getElementById('grafica'));
+        const r = document.getElementById('grafica').getBoundingClientRect();
+        const [x, y] = g.convertToPixel({ xAxisIndex: 0, yAxisIndex: 0 }, ['2024', 300]); return [r.x + x, r.y + y]; }""")
+    pagina.mouse.move(xy[0] - 40, xy[1])
+    pagina.mouse.move(xy[0], xy[1], steps=5)
+    pagina.wait_for_timeout(400)
+    assert pagina.inner_text(".tooltip-grafica .tt-proyeccion") == "Proyección del FMI"
+    # Un renglón por país aunque cada uno tenga dos tramos.
+    assert pagina.locator(".tooltip-grafica .tt-fila").count() == 2
+    # Ocultar un país con la leyenda oculta sus dos tramos (van por nombre).
+    pagina.locator('button.leyenda-item[data-codigo="ARG"]').click()
+    assert opcion_grafica(pagina, "o.legend[0].selected['Argentina']") is False
+
+
+def test_proyecciones_del_fmi_en_la_tabla(pagina):
+    pagina.goto(f"{BASE}/?indicador=PBI_USD_CORR&fuente=FMI_DM&paises=URY,ARG")
+    esperar_carga(pagina)
+    filas = pagina.locator("#tabla tbody tr")
+    assert filas.count() == 4
+    proyectadas = pagina.locator("#tabla tbody tr.fila-proyeccion")
+    assert proyectadas.count() == 1 and proyectadas.locator("th").inner_text().startswith("2024")
+    # Marcada con texto, no solo con color: «proy.» a la vista y "(proyección)" para lectores de pantalla.
+    assert proyectadas.locator(".marca-proyeccion").inner_text() == "proy."
+    assert proyectadas.locator(".oculto-visual").inner_text().strip() == "(proyección)"
+    assert "inicio-proyeccion" in proyectadas.get_attribute("class")
+    assert "«proy.»: proyección del FMI, desde 2024." in pagina.inner_text("#nota-tabla")
+    # El fondo de la fila proyectada se distingue del de las reales.
+    fondo = "e => getComputedStyle(e).backgroundColor"
+    assert proyectadas.locator("td").first.evaluate(fondo) != filas.first.locator("td").first.evaluate(fondo)
+
+
+def test_proyecciones_fuera_del_rango_no_se_marcan(pagina):
+    pagina.goto(f"{BASE}/?indicador=PBI_USD_CORR&fuente=FMI_DM&paises=URY,ARG&hasta=2010")
+    esperar_carga(pagina)
+    assert pagina.locator(".leyenda-proyeccion").count() == 0
+    assert pagina.locator("#tabla .fila-proyeccion").count() == 0
+    assert all(s["banda"] is None and not s["punteada"] for s in series_de_la_grafica(pagina))
+
+
+def test_banco_mundial_sin_proyecciones(pagina):
+    pagina.goto(f"{BASE}/?indicador=PBI_USD_CORR&fuente=BM&paises=URY,ARG")
+    esperar_carga(pagina)
+    assert pagina.locator(".leyenda-proyeccion").count() == 0
+    assert pagina.locator("#tabla .fila-proyeccion").count() == 0
+    assert "proy." not in pagina.inner_text("#nota-tabla")
+    assert [s["nombre"] for s in series_de_la_grafica(pagina)] == ["Uruguay", "Argentina"]
+
+
+# --- Proyecciones: casos agregados por el tester ---
+
+def textos_dibujados(pg):
+    """Textos que ECharts dibujó de verdad en el lienzo (no solo los que están en la opción)."""
+    return pg.evaluate("""() => echarts.getInstanceByDom(document.getElementById('grafica')).getZr().storage
+        .getDisplayList().map((e) => e.style && e.style.text).filter(Boolean)""")
+
+
+def test_banda_se_dibuja_aunque_la_primera_serie_no_tenga_datos(pagina):
+    # BRA no tiene PBI del FMI y va primero: la serie auxiliar de la banda copia sus datos (todos vacíos).
+    pagina.goto(f"{BASE}/?indicador=PBI_USD_CORR&fuente=FMI_DM&paises=BRA,URY,ARG")
+    esperar_carga(pagina)
+    assert pagina.inner_text(".leyenda-proyeccion") == "Proyección del FMI desde 2024"
+    assert "Proyección del FMI" in textos_dibujados(pagina)
+
+
+def test_una_sola_serie_con_proyeccion(pagina):
+    pagina.goto(f"{BASE}/?indicador=PBI_USD_CORR&fuente=FMI_DM&paises=ARG")
+    esperar_carga(pagina)
+    series = series_de_la_grafica(pagina)
+    assert [(s["nombre"], s["punteada"]) for s in series] == [
+        ("Proyección del FMI", False), ("Argentina", False), ("Argentina", True)]
+    assert pagina.locator("#tabla tbody tr.fila-proyeccion").count() == 1
+
+
+def test_base_100_en_un_anio_proyectado(pagina):
+    pagina.goto(f"{BASE}/?indicador=PBI_USD_CORR&fuente=FMI_DM&paises=URY,ARG&base=2024")
+    esperar_carga(pagina)
+    assert not pagina.locator("#estado").is_visible()
+    assert pagina.inner_text(".leyenda-proyeccion") == "Proyección del FMI desde 2024"
+    fila = pagina.locator("#tabla tbody tr.fila-proyeccion")
+    assert fila.count() == 1 and "100,0" in fila.inner_text()
+    # La línea del 100 sigue en la primera serie real (no en la auxiliar de la banda).
+    assert opcion_grafica(pagina, "o.series.filter((s) => s.markLine && s.markLine.data.some((d) => d.yAxis === 100)).map((s) => s.name)") == ["Uruguay"]
+
+
+def test_390px_con_proyecciones_sin_scroll_horizontal(servidor, navegador):
+    for tema in ("oscuro", "claro"):
+        ctx = navegador.new_context(viewport={"width": 390, "height": 844})
+        ctx.add_cookies([{"name": COOKIE_SESION, "value": servidor, "url": BASE}])
+        ctx.add_init_script(f"localStorage.setItem('tema', '{tema}')")
+        pg = ctx.new_page()
+        try:
+            pg.goto(f"{BASE}/?indicador=PBI_USD_CORR&fuente=FMI_DM&paises=URY,ARG")
+            esperar_carga(pg)
+            assert pg.evaluate("() => document.documentElement.scrollWidth") <= 390
+            assert pg.locator(".leyenda-proyeccion").is_visible()
+        finally:
+            ctx.close()

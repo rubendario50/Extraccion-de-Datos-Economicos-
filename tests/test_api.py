@@ -1,3 +1,5 @@
+from datetime import date
+
 import pytest
 
 from app.etl.fmi import cargar_fmi
@@ -22,7 +24,11 @@ def test_series(con_datos):
     assert [s["pais"] for s in cuerpo["series"]] == ["URY", "ARG"]
     arg = cuerpo["series"][1]
     assert arg["nombre"] == "Argentina"
-    assert arg["datos"] == [{"anio": 2000, "valor": 317.759}, {"anio": 2010, "valor": 424.729}]
+    # Datos del FMI: cada uno dice si es proyección (el fixture es de la edición de octubre de 2026).
+    assert arg["datos"] == [
+        {"anio": 2000, "valor": 317.759, "proyeccion": False},
+        {"anio": 2010, "valor": 424.729, "proyeccion": False},
+    ]
 
 
 def test_series_agregado_y_minusculas(con_datos):
@@ -82,7 +88,7 @@ def test_series_base_fuera_del_rango_de_datos(con_datos, base):
 def test_series_desde_igual_a_hasta(con_datos):
     r = con_datos.get("/api/series", params={"indicador": "PBI_USD_CORR", "paises": "ARG", "desde": 2010, "hasta": 2010})
     assert r.status_code == 200
-    assert r.json()["series"][0]["datos"] == [{"anio": 2010, "valor": 424.729}]
+    assert r.json()["series"][0]["datos"] == [{"anio": 2010, "valor": 424.729, "proyeccion": False}]
 
 
 def test_series_rango_sin_datos(con_datos):
@@ -325,7 +331,7 @@ def test_series_base_100_ignora_la_serie_sin_datos_en_el_rango(con_datos):
     )
     assert r.status_code == 200, r.text
     arg, ury = r.json()["series"]
-    assert arg["datos"] == [{"anio": 1980, "valor": pytest.approx(100)}]
+    assert arg["datos"] == [{"anio": 1980, "valor": pytest.approx(100), "proyeccion": False}]
     assert all(d["valor"] is None for d in ury["datos"])
 
 
@@ -334,3 +340,101 @@ def test_series_base_100_con_datos_pero_sin_anio_base_sigue_dando_422(con_dos_fu
         "/api/series", params={"indicador": "PBI_USD_CORR", "paises": "URY,USA", "fuente": "FMI_DM", "base": 2015}
     )
     assert r.status_code == 422 and "año base 2015" in r.json()["detail"]
+
+
+# --- Proyecciones del FMI ---
+
+def edicion_weo(sesion, codigo_externo, anio):
+    """Simula que la serie del FMI se cargó con la edición del WEO de `anio`."""
+    from sqlalchemy import select
+
+    from app.models import IndicadorSerieExterna
+
+    serie = sesion.scalar(select(IndicadorSerieExterna).where(IndicadorSerieExterna.codigo_externo == codigo_externo))
+    serie.proyeccion_desde = anio
+    sesion.commit()
+
+
+def test_series_fmi_marca_las_proyecciones(con_datos, sesion_con_semillas):
+    # Con una edición de 2010, desde 2010 los valores del fixture son proyecciones.
+    edicion_weo(sesion_con_semillas, "NGDPD", 2010)
+    r = con_datos.get("/api/series", params={"indicador": "PBI_USD_CORR", "paises": "ARG,URY"})
+    assert r.status_code == 200
+    cuerpo = r.json()
+    assert cuerpo["proyeccion_desde"] == 2010
+    for serie in cuerpo["series"]:
+        assert all(d["proyeccion"] == (d["anio"] >= 2010) for d in serie["datos"])
+    arg = {d["anio"]: d["proyeccion"] for d in cuerpo["series"][0]["datos"]}
+    assert arg == {1980: False, 2000: False, 2010: True, 2024: True}
+
+
+def test_series_fmi_proyecciones_en_indice_base_100(con_datos, sesion_con_semillas):
+    edicion_weo(sesion_con_semillas, "NGDPD", 2010)
+    r = con_datos.get("/api/series", params={"indicador": "PBI_USD_CORR", "paises": "ARG", "base": 2000, "desde": 2000})
+    assert r.status_code == 200
+    assert r.json()["proyeccion_desde"] == 2010
+    datos = r.json()["series"][0]["datos"]
+    assert [(d["anio"], d["proyeccion"]) for d in datos] == [(2000, False), (2010, True), (2024, True)]
+    assert datos[0]["valor"] == pytest.approx(100)
+
+
+def test_series_fmi_proyeccion_desde_la_edicion_cargada(con_datos):
+    # El fixture de /indicators es la edición de octubre de 2026.
+    r = con_datos.get("/api/series", params={"indicador": "PBI_USD_CORR", "paises": "ARG"})
+    assert r.json()["proyeccion_desde"] == min(2026, date.today().year)
+
+
+@pytest.mark.parametrize("edicion", [None, 2999])
+def test_series_fmi_sin_edicion_o_futura_usa_el_anio_en_curso(con_datos, sesion_con_semillas, edicion):
+    # Regla conservadora: nunca después del año en curso (un año que todavía no terminó no es dato real).
+    edicion_weo(sesion_con_semillas, "NGDPD", edicion)
+    r = con_datos.get("/api/series", params={"indicador": "PBI_USD_CORR", "paises": "ARG"})
+    assert r.json()["proyeccion_desde"] == date.today().year
+
+
+def test_series_bm_no_lleva_proyecciones(con_dos_fuentes):
+    r = con_dos_fuentes.get("/api/series", params={"indicador": "PBI_USD_CORR", "paises": "ARG", "fuente": "BM"})
+    assert r.status_code == 200
+    cuerpo = r.json()
+    assert cuerpo["proyeccion_desde"] is None
+    assert cuerpo["series"][0]["datos"] and all("proyeccion" not in d for d in cuerpo["series"][0]["datos"])
+
+
+# --- Proyecciones: casos agregados por el tester ---
+
+def test_primer_anio_proyectado_regla_con_hoy_explicito(sesion_con_semillas, cliente_fmi):
+    from sqlalchemy import select
+
+    from app.api.series import primer_anio_proyectado
+    from app.models import Fuente, Indicador
+
+    cargar_fmi(sesion_con_semillas, cliente_fmi, espera=0)  # edición de octubre de 2026
+    ind = sesion_con_semillas.scalar(select(Indicador).where(Indicador.codigo == "PBI_USD_CORR"))
+    fmi = sesion_con_semillas.scalar(select(Fuente).where(Fuente.codigo == "FMI_DM"))
+    bm = sesion_con_semillas.scalar(select(Fuente).where(Fuente.codigo == "BM"))
+    # Edición posterior al año en curso: manda el año en curso; edición anterior: manda la edición.
+    assert primer_anio_proyectado(sesion_con_semillas, ind.id, fmi, date(2025, 12, 31)) == 2025
+    assert primer_anio_proyectado(sesion_con_semillas, ind.id, fmi, date(2026, 1, 1)) == 2026
+    assert primer_anio_proyectado(sesion_con_semillas, ind.id, fmi, date(2028, 6, 1)) == 2026
+    # Las fuentes que no proyectan devuelven None aunque no tengan serie cargada.
+    assert primer_anio_proyectado(sesion_con_semillas, ind.id, bm, date(2026, 6, 1)) is None
+
+
+def test_series_fmi_rango_antes_de_la_proyeccion_no_marca_nada(con_datos, sesion_con_semillas):
+    edicion_weo(sesion_con_semillas, "NGDPD", 2010)
+    r = con_datos.get("/api/series", params={"indicador": "PBI_USD_CORR", "paises": "ARG,URY", "hasta": 2009})
+    assert r.status_code == 200
+    cuerpo = r.json()
+    # El año informado no depende del rango pedido; ningún dato del rango es proyección.
+    assert cuerpo["proyeccion_desde"] == 2010
+    datos = [d for s in cuerpo["series"] for d in s["datos"]]
+    assert datos and all(d["proyeccion"] is False for d in datos)
+
+
+def test_series_fmi_base_100_en_un_anio_proyectado(con_datos, sesion_con_semillas):
+    edicion_weo(sesion_con_semillas, "NGDPD", 2010)
+    r = con_datos.get("/api/series", params={"indicador": "PBI_USD_CORR", "paises": "ARG", "base": 2024})
+    assert r.status_code == 200
+    datos = {d["anio"]: d for d in r.json()["series"][0]["datos"]}
+    assert datos[2024]["valor"] == pytest.approx(100) and datos[2024]["proyeccion"] is True
+    assert datos[2000]["proyeccion"] is False

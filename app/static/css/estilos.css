@@ -110,6 +110,10 @@
   --grafica-eje: rgb(148 180 255 / 0.24);
   --grafica-zoom: rgb(34 211 238 / 0.12);
   --grafica-brillo: 1;   /* las líneas llevan un brillo suave del color de la serie */
+  /* Proyecciones del FMI: banda de la gráfica, su muestra en la leyenda y filas de la tabla (opacas, por las celdas fijas) */
+  --grafica-proyeccion: rgb(148 180 255 / 0.06);
+  --proyeccion-clave: rgb(148 180 255 / 0.16);
+  --fila-proyeccion: color-mix(in srgb, var(--superficie) 94%, #94b4ff);
 }
 
 :root[data-tema="claro"] {
@@ -165,6 +169,9 @@
   --grafica-eje: #c5ccd6;
   --grafica-zoom: rgb(8 145 178 / 0.1);
   --grafica-brillo: 0;
+  --grafica-proyeccion: rgb(15 40 90 / 0.045);
+  --proyeccion-clave: rgb(15 40 90 / 0.1);
+  --fila-proyeccion: color-mix(in srgb, var(--superficie) 96%, #0f285a);
 }
 
 /* ---------- Base ---------- */
@@ -1027,6 +1034,17 @@ button.leyenda-item:active { transform: scale(0.97); }
   border-top: 2px dashed var(--grafica-eje);
 }
 .leyenda-nota { margin-left: 0.25rem; font-size: var(--t-meta); color: var(--tinta-3); white-space: nowrap; }
+/* Clave de las proyecciones: la banda y la línea punteada de la gráfica en miniatura */
+.leyenda-proyeccion { cursor: default; color: var(--tinta-2); font-weight: 450; }
+.leyenda-proyeccion .leyenda-linea {
+  width: 1.25rem;
+  height: 0.75rem;
+  margin-top: calc((1.3em - 0.75rem) / 2);
+  border-radius: 2px;
+  background:
+    repeating-linear-gradient(90deg, var(--tinta-2) 0 5px, transparent 5px 8px) center / 100% 2px no-repeat,
+    var(--proyeccion-clave);
+}
 
 .grafica-marco { position: relative; min-width: 0; }
 .grafica {
@@ -1144,6 +1162,17 @@ button.leyenda-item:active { transform: scale(0.97); }
 .encabezado-nota { display: block; font-size: var(--t-meta); font-weight: 450; color: var(--tinta-3); }
 .tabla .sin-dato { color: var(--tinta-3); }
 .tabla-vacia { padding: var(--e-5); color: var(--tinta-2); font-size: var(--t-chico); }
+/* Años proyectados (FMI): el fondo de la banda de la gráfica, «proy.» junto al año y un corte punteado */
+.tabla .fila-proyeccion > th, .tabla .fila-proyeccion > td { background: var(--fila-proyeccion); }
+.tabla .fila-proyeccion > td { color: var(--tinta-2); }
+.tabla tr:has(+ .inicio-proyeccion) > * { border-bottom: 1px dashed var(--borde-control); }
+.marca-proyeccion {
+  margin-left: 0.5rem;
+  font-family: var(--fuente);
+  font-size: var(--t-eje);
+  font-weight: 500;
+  color: var(--tinta-2);
+}
 
 /* Colores de serie por clase (sin estilos en línea, por la CSP) */
 .serie-1 { --color-serie: var(--serie-1); }
@@ -1167,6 +1196,7 @@ button.leyenda-item:active { transform: scale(0.97); }
 .tt-fila { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 0.5rem; }
 .tt-nombre { color: var(--tinta-2); }
 .tt-valor { font-weight: 600; font-variant-numeric: tabular-nums; text-align: right; }
+.tt-proyeccion { margin-left: 0.5rem; font-family: var(--fuente); font-size: var(--t-meta); font-weight: 500; color: var(--tinta-2); }
 
 /* ---------- Responsive ---------- */
 

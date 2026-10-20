@@ -103,3 +103,14 @@ def test_datos_del_panel_con_indicadores_nacionales(con_uruguay, sesion_con_semi
     assert (dolar["desde"], dolar["hasta"], dolar["fuentes"][0]["corto"]) == (2026, 2026, "BCU")
     # El selector agrupa los indicadores.
     assert '<optgroup label="Internacionales">' in html and '<optgroup label="Uruguay">' in html
+
+
+@pytest.mark.parametrize("indicador", ["IPC_UY", "DESEMPLEO_UY", "DOLAR_INTERBANCARIO"])
+def test_series_de_uruguay_no_llevan_proyecciones(con_uruguay, indicador):
+    """INE y BCU publican datos observados: sin `proyeccion_desde` ni marca por dato."""
+    r = con_uruguay.get("/api/series", params={"indicador": indicador})
+    assert r.status_code == 200
+    cuerpo = r.json()
+    assert "proyeccion_desde" in cuerpo and cuerpo["proyeccion_desde"] is None
+    datos = cuerpo["series"][0]["datos"]
+    assert datos and all("proyeccion" not in d for d in datos)

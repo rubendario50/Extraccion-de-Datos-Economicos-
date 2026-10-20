@@ -197,6 +197,25 @@ def test_portada_separa_las_proyecciones_del_fmi(sesion_con_semillas, cliente_fm
     assert fmi["anios"] == "1980–2024" and fmi["proyecciones_hasta"] is None
 
 
+def test_portada_usa_la_edicion_del_weo_como_el_panel(sesion_con_semillas, cliente_fmi):
+    """Misma regla que /api/series: con una edición de 2011, 2011 ya es proyección aunque estemos en 2026."""
+    from datetime import date
+
+    from sqlalchemy import update
+
+    from app.models import IndicadorSerieExterna
+    from app.web.portada import datos_portada
+
+    cargar_fmi(sesion_con_semillas, cliente_fmi, espera=0)
+    sesion_con_semillas.execute(update(IndicadorSerieExterna).values(proyeccion_desde=2011))
+    sesion_con_semillas.commit()
+    p = datos_portada(sesion_con_semillas, hoy=date(2026, 6, 1))
+    fmi = p["fuentes"][0]
+    assert fmi["anios"] == "1980–2010" and fmi["proyecciones_hasta"] == 2024
+    # La muestra solo usa años reales: no llega a 2024.
+    assert p["muestra"]["hasta"] == 2010
+
+
 def test_portada_aclara_las_proyecciones_en_la_pagina(cliente_web, sesion_con_semillas, cliente_fmi, monkeypatch):
     from datetime import date
 

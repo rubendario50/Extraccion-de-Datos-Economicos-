@@ -11,7 +11,7 @@ Plataforma de recopilación, análisis y difusión de datos económicos internac
 
 ## Estado
 
-Versión actual: 0.2.4 (ver `CHANGELOG.md`).
+Versión actual: 0.2.5 (ver `CHANGELOG.md`).
 
 Desde la 0.1: base de datos PostgreSQL en Podman, tabla maestra de países (`data/seed/paises.csv`), carga del PBI del FMI DataMapper (PBI en dólares corrientes y crecimiento real) y una web con login (contraseña o Google, doble factor obligatorio) donde se eligen indicador, países y años y se ven la gráfica y la tabla, con opción de índice base 100. La arquitectura está en `docs/arquitectura.md`.
 
@@ -121,7 +121,7 @@ Toda la API exige una sesión iniciada con el doble factor completo (la cookie d
 
 Las fuentes nunca se mezclan: todas las series de una respuesta salen de la misma fuente, aunque el indicador tenga datos de las dos. Las cifras de ambas están en la misma unidad y escala (por ejemplo, el PBI en miles de millones de dólares y la población en millones).
 
-Respuesta: `{"indicador": {codigo, nombre, unidad, escala, alcance, frecuencia}, "fuente", "fuente_nombre", "fuentes", "base", "series": [{"pais", "codigo", "nombre", "fuente", "datos": [{"anio", "valor"}]}]}`, donde `fuentes` lista las fuentes que publican el indicador. En las series mensuales y diarias cada dato trae `fecha` (ISO, `"2024-03-01"`; en las mensuales, el primer día del mes) en lugar de `anio`, y hay una sola serie, `"pais": "URY"`. Ejemplo: `/api/series?indicador=DOLAR_INTERBANCARIO&desde=2024`. Errores: 404 (indicador, fuente o país desconocido, o fuente que no publica ese indicador), 400 (más de 8 países, u otro país en un indicador de Uruguay), 422 (parámetros inválidos o año base sin dato), con el motivo en `detail`.
+Respuesta: `{"indicador": {codigo, nombre, unidad, escala, alcance, frecuencia}, "fuente", "fuente_nombre", "fuentes", "base", "proyeccion_desde", "series": [{"pais", "codigo", "nombre", "fuente", "datos": [{"anio", "valor"}]}]}`, donde `fuentes` lista las fuentes que publican el indicador. Con la fuente `FMI_DM`, `proyeccion_desde` es el primer año que el FMI publica como proyección y cada dato trae además `"proyeccion": true` o `false`; con las demás fuentes (que no publican proyecciones), `proyeccion_desde` es `null` y los datos no llevan la marca. Cómo se decide el año: `docs/arquitectura.md`, "Proyecciones del FMI". En las series mensuales y diarias cada dato trae `fecha` (ISO, `"2024-03-01"`; en las mensuales, el primer día del mes) en lugar de `anio`, y hay una sola serie, `"pais": "URY"`. Ejemplo: `/api/series?indicador=DOLAR_INTERBANCARIO&desde=2024`. Errores: 404 (indicador, fuente o país desconocido, o fuente que no publica ese indicador), 400 (más de 8 países, u otro país en un indicador de Uruguay), 422 (parámetros inválidos o año base sin dato), con el motivo en `detail`.
 
 ## Acceso y seguridad
 

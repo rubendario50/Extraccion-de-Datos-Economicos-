@@ -14,7 +14,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.analisis.indices import ErrorIndice, a_base_100
-from app.api.series import TABLAS
+from app.api.series import TABLAS, primer_anio_proyectado
 from app.models import DatoInternacionalAnual, Fuente, Indicador, Pais, PaisCodigoExterno
 from app.web.panel import NOMBRES_CORTOS_FUENTE, NOMBRES_FUENTE
 
@@ -48,12 +48,17 @@ def _cobertura(db: Session, hoy: date) -> list[dict]:
     """Por fuente con datos: qué publica (indicadores y frecuencia) y desde/hasta qué año.
 
     En las tablas anuales, los años posteriores al último cerrado son proyecciones (el FMI publica
-    estimaciones hasta varios años adelante): se cuentan aparte para no presentarlas como datos.
+    estimaciones hasta varios años adelante): se cuentan aparte para no presentarlas como datos. En el
+    FMI el último cerrado es el anterior al primer año proyectado, con la misma regla que la API.
     Las series mensuales y diarias del año en curso sí son datos publicados.
     """
-    ultimo_cerrado = hoy.year - 1
     indicadores = {i.id: i for i in db.scalars(select(Indicador))}
     fuentes = {f.id: f for f in db.scalars(select(Fuente).order_by(Fuente.id))}
+
+    def ultimo_cerrado(fuente_id: int, indicador_id: int) -> int:
+        proyectado = primer_anio_proyectado(db, indicador_id, fuentes[fuente_id], hoy)
+        return (proyectado if proyectado is not None else hoy.year) - 1
+
     por_fuente: dict[int, dict] = {}
     for (_, frecuencia), (modelo, col_periodo, col_valor) in TABLAS.items():
         periodo, valor = getattr(modelo, col_periodo), getattr(modelo, col_valor)
@@ -64,9 +69,10 @@ def _cobertura(db: Session, hoy: date) -> list[dict]:
         ).all()
         for fuente_id, indicador_id, desde, hasta in filas:
             desde, hasta = _anio(desde), _anio(hasta)
-            proyectado = hasta if frecuencia == "anual" and hasta > ultimo_cerrado else None
+            cerrado = ultimo_cerrado(fuente_id, indicador_id) if frecuencia == "anual" else None
+            proyectado = hasta if cerrado is not None and hasta > cerrado else None
             if proyectado is not None:
-                hasta = max(desde, ultimo_cerrado)
+                hasta = max(desde, cerrado)
             f = por_fuente.setdefault(fuente_id, {"indicadores": set(), "desde": desde, "hasta": hasta, "proyectado": None})
             f["indicadores"].add(indicador_id)
             f["desde"] = min(f["desde"], desde)
@@ -117,7 +123,7 @@ def _muestra(db: Session, hoy: date) -> dict | None:
     fte = db.scalar(select(Fuente).where(Fuente.codigo == MUESTRA_FUENTE))
     if ind is None or fte is None:
         return None
-    ultimo = hoy.year - 1
+    ultimo = primer_anio_proyectado(db, ind.id, fte, hoy) - 1
     series = []
     for codigo in MUESTRA_PAISES:
         pais = db.scalar(

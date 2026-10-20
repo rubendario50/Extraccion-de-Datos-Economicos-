@@ -191,6 +191,13 @@ Superficie opaca, borde `#5d6a85` (3,7:1), foco con borde cian y halo de 3 px.
 ### Navigation
 Barra de vidrio de 56 px: marca con logo cian brillante, botón de tema, avatar con inicial, «Salir».
 
+### Proyecciones (FMI)
+Los años que el FMI publica como proyección se leen distinto sin depender del color: el tramo de cada línea es
+punteado (mismo color y brillo de la serie) y arranca en el último año real; detrás, una banda tenue con su borde
+punteado y el rótulo «Proyección del FMI» arriba, en tinta-3; en la leyenda, una clave (no es botón) con la banda y
+la línea punteada en miniatura. Tooltip: «Proyección del FMI» junto al año. Tabla: filas con el fondo de la banda,
+«proy.» junto al año, corte punteado antes de la primera y la explicación en la nota de la tabla.
+
 ### Muestra de la portada
 Fragmento real del producto (`data-ui`): leyenda con valores en mono, marcas del eje en HTML repartidas sobre
 el alto del dibujo, líneas con brillo que se dibujan una vez (`clip-path`, 1,3 s) y números que cuentan

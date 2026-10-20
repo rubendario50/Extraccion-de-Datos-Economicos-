@@ -2,8 +2,8 @@ import httpx
 import pytest
 from sqlalchemy import func, select
 
-from app.etl.fmi import cargar_fmi, obtener_json
-from app.models import DatoInternacionalAnual, Indicador, Pais
+from app.etl.fmi import anio_edicion, cargar_fmi, obtener_json
+from app.models import DatoInternacionalAnual, Fuente, Indicador, IndicadorSerieExterna, Pais
 from tests.conftest import transporte_fmi
 
 
@@ -40,7 +40,8 @@ def test_filtra_indicadores(sesion_con_semillas):
     with httpx.Client(transport=transporte_fmi(llamadas), base_url="https://fmi.test/api/v1") as c:
         resultado = cargar_fmi(sesion_con_semillas, c, ["NGDP_RPCH"], espera=0)
     assert resultado == {"NGDP_RPCH": 4}
-    assert llamadas == ["/api/v1/NGDP_RPCH"]
+    # Primero la edición del WEO (para saber desde qué año hay proyecciones), después los datos.
+    assert llamadas == ["/api/v1/indicators", "/api/v1/NGDP_RPCH"]
 
 
 def test_indicador_no_definido_da_error(sesion_con_semillas, cliente_fmi):
@@ -107,3 +108,112 @@ def test_respuesta_vacia_del_fmi_no_guarda_nada(sesion_con_semillas):
                       base_url="https://x") as c:
         assert cargar_fmi(sesion_con_semillas, c, ["NGDPD"], espera=0) == {"NGDPD": 0}
     assert total(sesion_con_semillas) == 0
+
+
+# --- Edición del WEO (desde qué año hay proyecciones) ---
+
+def proyecciones(sesion):
+    return dict(sesion.execute(
+        select(IndicadorSerieExterna.codigo_externo, IndicadorSerieExterna.proyeccion_desde)
+        .join(Fuente).where(Fuente.codigo == "FMI_DM")
+    ).all())
+
+
+def test_guarda_la_edicion_del_weo_de_cada_indicador(sesion_con_semillas, cliente_fmi):
+    cargar_fmi(sesion_con_semillas, cliente_fmi, espera=0)
+    # tests/fixtures/fmi_indicators.json: "World Economic Outlook (October 2026)" en los cinco.
+    assert proyecciones(sesion_con_semillas) == {c: 2026 for c in ["NGDPD", "NGDP_RPCH", "GGXWDG_NGDP", "GGXCNL_NGDP", "LP"]}
+
+
+@pytest.mark.parametrize(("texto", "anio"), [
+    ("World Economic Outlook (October 2026)", 2026),
+    ("World Economic Outlook (April 2027)", 2027),
+    ("Fiscal Monitor", None),
+    ("Fiscal Monitor (October 2026)", None),  # otra base del DataMapper: no es el WEO
+    ("world economic outlook (october 2026)", 2026),
+    (None, None),
+])
+def test_anio_edicion(texto, anio):
+    assert anio_edicion(texto) == anio
+
+
+def test_sin_edicion_la_carga_sigue_y_la_deja_vacia(sesion_con_semillas, cliente_fmi):
+    cargar_fmi(sesion_con_semillas, cliente_fmi, ["NGDPD"], espera=0)
+    assert proyecciones(sesion_con_semillas)["NGDPD"] == 2026
+
+    # /indicators falla: los datos se cargan igual y la edición vieja no queda pegada a datos nuevos.
+    def sin_indicators(pedido):
+        if pedido.url.path.endswith("/indicators"):
+            return httpx.Response(503)
+        return transporte_fmi().handle_request(pedido)
+
+    with httpx.Client(transport=httpx.MockTransport(sin_indicators), base_url="https://fmi.test/api/v1") as c:
+        assert cargar_fmi(sesion_con_semillas, c, ["NGDPD"], espera=0) == {"NGDPD": 15}
+    sesion_con_semillas.expire_all()
+    assert proyecciones(sesion_con_semillas)["NGDPD"] is None
+
+
+# --- Edición del WEO: casos agregados por el tester ---
+
+@pytest.mark.parametrize("respuesta", [
+    httpx.Response(200, json={"indicators": {"NGDPD": None}}),          # metadatos vacíos
+    httpx.Response(200, json={"indicators": {"NGDPD": {"label": "x"}}}),  # sin "source"
+    httpx.Response(200, json={}),                                        # sin "indicators"
+    httpx.Response(200, content=b"<html>no es json</html>"),             # cuerpo no JSON
+])
+def test_indicators_raro_no_frena_la_carga(sesion_con_semillas, respuesta):
+    def responder(pedido):
+        if pedido.url.path.endswith("/indicators"):
+            return respuesta
+        return transporte_fmi().handle_request(pedido)
+
+    with httpx.Client(transport=httpx.MockTransport(responder), base_url="https://fmi.test/api/v1") as c:
+        assert cargar_fmi(sesion_con_semillas, c, ["NGDPD"], espera=0) == {"NGDPD": 15}
+    assert proyecciones(sesion_con_semillas)["NGDPD"] is None
+
+
+def test_anio_edicion_toma_el_ultimo_anio_del_texto():
+    assert anio_edicion("World Economic Outlook (October 2026)") == 2026
+    assert anio_edicion("") is None
+    assert anio_edicion("WEO 12026") is None  # no es un año suelto
+
+
+@pytest.mark.parametrize("respuesta", [
+    httpx.Response(200, json=[]),                         # JSON válido pero no es un objeto
+    httpx.Response(200, json={"indicators": []}),         # "indicators" como lista
+    httpx.Response(200, json={"indicators": "x"}),        # "indicators" como texto
+    httpx.Response(200, json={"indicators": {"NGDPD": "World Economic Outlook (October 2026)"}}),  # meta como texto
+    httpx.Response(404),                                  # 4xx
+])
+def test_indicators_con_forma_inesperada_no_frena_la_carga(sesion_con_semillas, respuesta):
+    def responder(pedido):
+        if pedido.url.path.endswith("/indicators"):
+            return respuesta
+        return transporte_fmi().handle_request(pedido)
+
+    with httpx.Client(transport=httpx.MockTransport(responder), base_url="https://fmi.test/api/v1") as c:
+        assert cargar_fmi(sesion_con_semillas, c, ["NGDPD"], espera=0) == {"NGDPD": 15}
+    assert proyecciones(sesion_con_semillas)["NGDPD"] is None
+
+
+def test_indicators_sin_red_no_frena_la_carga(sesion_con_semillas):
+    def responder(pedido):
+        if pedido.url.path.endswith("/indicators"):
+            raise httpx.ConnectError("sin red", request=pedido)
+        return transporte_fmi().handle_request(pedido)
+
+    with httpx.Client(transport=httpx.MockTransport(responder), base_url="https://fmi.test/api/v1") as c:
+        assert cargar_fmi(sesion_con_semillas, c, ["NGDPD"], espera=0) == {"NGDPD": 15}
+    assert proyecciones(sesion_con_semillas)["NGDPD"] is None
+
+
+@pytest.mark.parametrize("fuente", [2026, ["World Economic Outlook (October 2026)"], {"nombre": "WEO"}])
+def test_indicators_con_source_que_no_es_texto_no_frena_la_carga(sesion_con_semillas, fuente):
+    def responder(pedido):
+        if pedido.url.path.endswith("/indicators"):
+            return httpx.Response(200, json={"indicators": {"NGDPD": {"source": fuente}}})
+        return transporte_fmi().handle_request(pedido)
+
+    with httpx.Client(transport=httpx.MockTransport(responder), base_url="https://fmi.test/api/v1") as c:
+        assert cargar_fmi(sesion_con_semillas, c, ["NGDPD"], espera=0) == {"NGDPD": 15}
+    assert proyecciones(sesion_con_semillas)["NGDPD"] is None

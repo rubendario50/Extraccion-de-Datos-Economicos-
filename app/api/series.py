@@ -37,6 +37,25 @@ TABLAS = {
 }
 # Las series nacionales son de Uruguay: una sola serie, con este código de país.
 PAIS_NACIONAL = "URY"
+# Fuentes que publican proyecciones (los años desde la edición del WEO). El BM, el INE y el BCU no.
+FUENTES_CON_PROYECCIONES = {"FMI_DM"}
+
+
+def primer_anio_proyectado(db: Session, indicador_id: int, fte: Fuente, hoy: date | None = None) -> int | None:
+    """Primer año que la fuente publica como proyección, o None si la fuente no proyecta.
+
+    Regla conservadora (docs/arquitectura.md, "Proyecciones del FMI"): el menor entre el año de la
+    edición del WEO con la que se cargó la serie y el año en curso; sin edición conocida, el año en curso.
+    """
+    if fte.codigo not in FUENTES_CON_PROYECCIONES:
+        return None
+    anio = (hoy or date.today()).year
+    edicion = db.scalar(
+        select(IndicadorSerieExterna.proyeccion_desde).where(
+            IndicadorSerieExterna.indicador_id == indicador_id, IndicadorSerieExterna.fuente_id == fte.id
+        )
+    )
+    return min(edicion, anio) if edicion else anio
 
 
 def tabla_de(ind: Indicador):
@@ -114,7 +133,8 @@ def obtener_series(
 
     if ind.alcance == "nacional":
         serie = serie_nacional(db, ind, fte, paises, desde, hasta, base)
-        return respuesta(ind, fte, fuentes, base, [serie])
+        return respuesta(ind, fte, fuentes, base, [serie], None)
+    proyeccion = primer_anio_proyectado(db, ind.id, fte)
 
     # Los códigos no distinguen mayúsculas (ury = URY) y los repetidos se quitan, conservando el orden.
     escritos: dict[str, str] = {}  # código en mayúsculas -> como lo escribió quien pidió
@@ -164,9 +184,12 @@ def obtener_series(
             except ErrorIndice as e:
                 raise HTTPException(422, f"{pais.nombre}: {e}") from e
         datos = [{"anio": anio, "valor": valor} for anio, valor in valores.items() if en_rango(anio)]
+        if proyeccion is not None:  # solo las fuentes que proyectan llevan la marca
+            for d in datos:
+                d["proyeccion"] = d["anio"] >= proyeccion
         series.append({"pais": codigo, "codigo": pais.codigo, "nombre": pais.nombre, "fuente": fte.codigo, "datos": datos})
 
-    return respuesta(ind, fte, fuentes, base, series)
+    return respuesta(ind, fte, fuentes, base, series, proyeccion)
 
 
 def serie_nacional(
@@ -210,7 +233,10 @@ def serie_nacional(
     }
 
 
-def respuesta(ind: Indicador, fte: Fuente, fuentes: list[Fuente], base: int | None, series: list[dict]) -> dict:
+def respuesta(
+    ind: Indicador, fte: Fuente, fuentes: list[Fuente], base: int | None, series: list[dict], proyeccion: int | None
+) -> dict:
+    """`proyeccion_desde`: primer año que la fuente publica como proyección (None si la fuente no proyecta)."""
     return {
         "indicador": {
             "codigo": ind.codigo,
@@ -224,5 +250,6 @@ def respuesta(ind: Indicador, fte: Fuente, fuentes: list[Fuente], base: int | No
         "fuente_nombre": fte.nombre,
         "fuentes": [f.codigo for f in fuentes],
         "base": base,
+        "proyeccion_desde": proyeccion,
         "series": series,
     }

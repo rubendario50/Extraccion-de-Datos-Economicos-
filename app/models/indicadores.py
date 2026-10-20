@@ -1,6 +1,6 @@
 """Fuentes de datos, indicadores internos y su código en cada fuente."""
 
-from sqlalchemy import Double, ForeignKey, String, Text, UniqueConstraint
+from sqlalchemy import Double, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db import Base
@@ -43,6 +43,9 @@ class IndicadorSerieExterna(Base):
     # Multiplicador que lleva el valor de la fuente a la unidad y escala del indicador interno
     # (por ejemplo 1e-9 para pasar dólares del Banco Mundial a miles de millones). Vacío = 1.
     factor: Mapped[float | None] = mapped_column(Double)
+    # Solo FMI: año de la edición del WEO con la que se cargaron los datos ("October 2026" -> 2026).
+    # Desde ese año los valores son proyecciones (ver docs/arquitectura.md). Vacío = desconocido.
+    proyeccion_desde: Mapped[int | None] = mapped_column(Integer)
 
     indicador: Mapped[Indicador] = relationship(back_populates="series_externas")
     fuente: Mapped[Fuente] = relationship()

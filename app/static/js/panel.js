@@ -536,6 +536,27 @@
   // ---------- Gráfica ----------
 
   let grafica = null;
+  // origenGrafica[k]: índice en la respuesta de la serie k de ECharts (null en la serie auxiliar de la banda).
+  let origenGrafica = [];
+
+  // Los dos tramos de un país (real y proyectado) se resaltan juntos: sin esto, al pasar sobre uno, el
+  // resaltado de ECharts atenuaría al otro como si fuera otra serie.
+  function tramosHermanos(k) {
+    const o = origenGrafica[k];
+    return o == null ? [] : origenGrafica.flatMap((x, j) => (x === o && j !== k ? [j] : []));
+  }
+
+  function crearGrafica() {
+    grafica = echarts.init(el.grafica, null, { renderer: "canvas" });
+    grafica.on("mouseover", { componentType: "series" }, (e) => {
+      const hermanos = tramosHermanos(e.seriesIndex);
+      if (hermanos.length) grafica.dispatchAction({ type: "highlight", seriesIndex: [e.seriesIndex, ...hermanos] });
+    });
+    grafica.on("mouseout", { componentType: "series" }, (e) => {
+      const hermanos = tramosHermanos(e.seriesIndex);
+      if (hermanos.length) grafica.dispatchAction({ type: "downplay", seriesIndex: [e.seriesIndex, ...hermanos] });
+    });
+  }
 
   // "rgb(34 211 238 / 0.12)" -> "rgba(34, 211, 238, 0.12)": ECharts calcula sobre los colores y no lee la sintaxis nueva.
   function normalizarColor(c) {
@@ -561,6 +582,7 @@
       grilla: v("--grafica-grilla"),
       eje: v("--grafica-eje"),
       zoom: v("--grafica-zoom"),
+      proyeccion: v("--grafica-proyeccion"),
       brillo: v("--grafica-brillo") === "1",
       bordeControl: v("--borde-control"),
       acento: v("--acento"),
@@ -597,6 +619,18 @@
   }
 
   const TEXTO_VACIA = { fuente: "sin datos en esta fuente", rango: "sin datos en este rango" };
+
+  // ---------- Proyecciones (FMI) ----------
+
+  // Períodos que la API marca como proyección (solo el FMI las publica). Vacío si no hay ninguno.
+  const periodosProyectados = (cuerpo) =>
+    new Set(cuerpo.series.flatMap((s) => s.datos.filter((d) => d.proyeccion && d.valor != null).map(clave)));
+
+  // "Proyección del FMI" (o en minúscula, dentro de una oración), con el nombre corto de la fuente.
+  function textoProyeccion(cuerpo, minuscula) {
+    const fte = indicadorActual()?.fuentes.find((f) => f.codigo === cuerpo.fuente);
+    return `${minuscula ? "p" : "P"}royección del ${fte?.corto || cuerpo.fuente}`;
+  }
 
   function pintar(cuerpo) {
     const series = cuerpo.series;
@@ -653,7 +687,7 @@
       return;
     }
     const c = colores();
-    if (!grafica) grafica = echarts.init(el.grafica, null, { renderer: "canvas" });
+    if (!grafica) crearGrafica();
     const vacia = cuerpo.series.map((s) => !tieneDatos(s));
     const pocas = vacia.filter((v) => !v).length <= 4;
     const angosto = el.grafica.clientWidth < 560;
@@ -666,14 +700,29 @@
     const frecuencia = cuerpo.indicador.frecuencia;
     const conFechas = Boolean(frecuencia && frecuencia !== "anual");
 
-    const series = cuerpo.series.map((s, i) => {
+    // Proyecciones (solo series anuales del FMI): cada línea se parte en un tramo real y otro punteado, que
+    // arranca en el último año real para que la línea siga sin cortes. Detrás, una banda cubre el mismo tramo
+    // (así tampoco queda sin ancho cuando el único año proyectado es el último).
+    const proyectados = conFechas ? new Set() : periodosProyectados(cuerpo);
+    const primerProyectado = anios.find((a) => proyectados.has(a));
+    const conProyeccion = primerProyectado !== undefined;
+    const iPrimero = anios.indexOf(primerProyectado);
+    const inicioBanda = String(anios[Math.max(0, iPrimero - 1)]);
+    const etiquetaProyeccion = textoProyeccion(cuerpo);
+
+    const origen = [];
+    origenGrafica = origen;
+    const series = cuerpo.series.flatMap((s, i) => {
       const valores = new Map(s.datos.map((d) => [clave(d), d.valor]));
-      const serie = {
+      const valor = (a) => (valores.has(a) ? valores.get(a) : null);
+      const tramoProyectado = conProyeccion
+        ? anios.map((a, j) => (proyectados.has(a) || j === iPrimero - 1 ? valor(a) : null))
+        : [];
+      const conTramo = tramoProyectado.some((v, j) => v != null && j >= iPrimero);
+      const tramo = (data, punteado) => ({
         type: "line",
         name: s.nombre,
-        data: conFechas
-          ? s.datos.map((d) => [aFecha(d.fecha).getTime(), d.valor])
-          : anios.map((a) => (valores.has(a) ? valores.get(a) : null)),
+        data,
         ...(conFechas ? { sampling: "lttb" } : {}),
         showSymbol: false,
         symbol: "circle",
@@ -681,12 +730,13 @@
         // En el tema oscuro cada línea lleva un brillo suave de su color (más tenue con muchas series).
         lineStyle: {
           width: 2,
+          ...(punteado ? { type: [5, 4] } : {}),
           ...(c.brillo && /^#[0-9a-f]{6}$/i.test(c.series[slot(s)])
             ? { shadowColor: conAlfa(c.series[slot(s)], pocas ? 0.55 : 0.35), shadowBlur: pocas ? 10 : 6 }
             : {}),
         },
         itemStyle: { color: c.series[slot(s)], borderColor: c.superficie, borderWidth: 2 },
-        emphasis: { focus: "series", lineStyle: { width: 2.5 } },
+        emphasis: { focus: "series", lineStyle: { width: 2.5, opacity: 1 } },
         blur: { lineStyle: { opacity: 0.2 } },
         // La serie única de Uruguay lleva un relleno suave que se desvanece hacia abajo.
         ...(nacional && /^#[0-9a-f]{6}$/i.test(c.series[slot(s)])
@@ -699,9 +749,10 @@
               },
             }
           : {}),
-        // Una serie sin datos no dibuja etiqueta (si no, queda encimada sobre las otras).
+        // Una serie sin datos no dibuja etiqueta (si no, queda encimada sobre las otras); con proyección, la
+        // etiqueta va al final del tramo punteado.
         endLabel: {
-          show: etiquetas && !vacia[i],
+          show: etiquetas && !vacia[i] && punteado === conTramo,
           formatter: "{a}",
           width: 100,
           overflow: "truncate",
@@ -711,9 +762,15 @@
           distance: 6,
         },
         labelLayout: { moveOverlap: "shiftY" },
-      };
+      });
+      const real = tramo(
+        conFechas
+          ? s.datos.map((d) => [aFecha(d.fecha).getTime(), d.valor])
+          : anios.map((a) => (proyectados.has(a) ? null : valor(a))),
+        false
+      );
       if (i === 0 && cuerpo.base != null) {
-        serie.markLine = {
+        real.markLine = {
           silent: true,
           symbol: "none",
           label: { show: false },
@@ -721,9 +778,53 @@
           data: [{ yAxis: 100 }],
         };
       }
-      return serie;
+      origen.push(i);
+      if (!conTramo) return [real];
+      origen.push(i);
+      return [real, tramo(tramoProyectado, true)];
     });
 
+    if (conProyeccion) {
+      // Serie auxiliar invisible, la primera: la banda no depende de que una serie esté visible, y la vista previa
+      // del zoom (ECharts la dibuja con la primera serie) muestra la primera serie completa, sin cortarse.
+      const primera = new Map(cuerpo.series[0].datos.map((d) => [clave(d), d.valor]));
+      origen.unshift(null);
+      series.unshift({
+        type: "line",
+        name: etiquetaProyeccion,
+        data: anios.map((a) => (primera.has(a) ? primera.get(a) : null)),
+        silent: true,
+        showSymbol: false,
+        lineStyle: { opacity: 0 },
+        emphasis: { disabled: true },
+        tooltip: { show: false },
+        markArea: {
+          silent: true,
+          itemStyle: { color: c.proyeccion },
+          // La banda no se atenúa al resaltar una serie: marca años, no pertenece a ninguna línea.
+          blur: { itemStyle: { opacity: 1 }, label: { opacity: 1 } },
+          // Arriba de la banda, alineado a la derecha: no tapa las líneas y no se corta si la banda es angosta.
+          label: {
+            show: true,
+            position: "insideTopRight",
+            offset: [0, -22],
+            formatter: etiquetaProyeccion,
+            color: c.tinta3,
+            fontFamily: c.fuente,
+            fontSize: 12,
+          },
+          data: [[{ xAxis: inicioBanda }, { xAxis: String(anios[anios.length - 1]) }]],
+        },
+        markLine: {
+          silent: true,
+          symbol: "none",
+          label: { show: false },
+          lineStyle: { color: c.eje, type: [3, 3], width: 1 },
+          blur: { lineStyle: { opacity: 1 } },
+          data: [{ xAxis: inicioBanda }],
+        },
+      });
+    }
 
     grafica.setOption(
       {
@@ -732,8 +833,9 @@
         animationDurationUpdate: 250,
         animationEasingUpdate: "cubicOut",
         textStyle: { fontFamily: c.fuente, color: c.tinta2 },
-        color: cuerpo.series.map((s) => c.series[slot(s)]),
-        grid: { left: 4, right: etiquetas ? 112 : 12, top: 16, bottom: 64, containLabel: true },
+        color: origen.map((o) => c.series[o == null ? 1 : slot(cuerpo.series[o])]),
+        // Con proyección, más aire arriba para el rótulo de la banda.
+        grid: { left: 4, right: etiquetas ? 112 : 12, top: conProyeccion ? 32 : 16, bottom: 64, containLabel: true },
         // La leyenda va en HTML (arriba de la gráfica) para que nunca tape el eje en pantallas angostas.
         legend: { show: false, selected: Object.fromEntries(cuerpo.series.map((s) => [s.nombre, !ocultas.has(s.pais)])) },
         tooltip: {
@@ -747,11 +849,17 @@
           textStyle: { color: c.tinta, fontFamily: c.fuente },
           axisPointer: { type: "line", lineStyle: { color: c.bordeControl, width: 1, type: [3, 3] } },
           formatter: (params) => {
-            const filas = params
-              .filter((p) => !vacia[p.seriesIndex])
-              .map((p) => {
-                const s = cuerpo.series[p.seriesIndex];
-                const valor = Array.isArray(p.value) ? p.value[1] : p.value;
+            // Una fila por país: en el último año real se cruzan sus dos tramos (real y proyectado).
+            const valores = new Map();
+            for (const p of params) {
+              const o = origen[p.seriesIndex];
+              if (o == null || vacia[o]) continue;
+              const valor = Array.isArray(p.value) ? p.value[1] : p.value;
+              if (!valores.has(o) || valores.get(o) == null) valores.set(o, valor);
+            }
+            const filas = [...valores]
+              .map(([o, valor]) => {
+                const s = cuerpo.series[o];
                 return (
                   `<div class="tt-fila"><span class="marca-serie serie-${slot(s)}"></span>` +
                   `<span class="tt-nombre">${escapar(s.nombre)}</span><span class="tt-valor">${formatear(valor)}</span></div>`
@@ -759,7 +867,10 @@
               })
               .join("");
             const periodo = conFechas ? textoPeriodo(params[0].axisValue, frecuencia, true) : params[0].axisValue;
-            return `<div class="tt"><div class="tt-anio">${escapar(periodo)}</div>${filas}</div>`;
+            const proyeccion = proyectados.has(Number(params[0].axisValue))
+              ? `<span class="tt-proyeccion">${escapar(etiquetaProyeccion)}</span>`
+              : "";
+            return `<div class="tt"><div class="tt-anio">${escapar(periodo)}${proyeccion}</div>${filas}</div>`;
           },
         },
         xAxis: conFechas
@@ -824,18 +935,21 @@
     );
 
     if (nacional) el.leyenda.replaceChildren();
-    else pintarLeyenda(cuerpo);
+    else pintarLeyenda(cuerpo, conProyeccion ? `${etiquetaProyeccion} desde ${primerProyectado}` : null);
     const nombres = cuerpo.series.map((s) => s.nombre).join(", ");
     el.grafica.setAttribute(
       "aria-label",
       `Gráfica de líneas: ${cuerpo.indicador.nombre} de ${nombres}, ${textoPeriodo(anios[0], frecuencia, true)} a ` +
-        `${textoPeriodo(anios[anios.length - 1], frecuencia, true)}. Los valores están en la tabla.`
+        `${textoPeriodo(anios[anios.length - 1], frecuencia, true)}.` +
+        (conProyeccion ? ` Desde ${primerProyectado}, ${textoProyeccion(cuerpo, true)} (línea punteada).` : "") +
+        " Los valores están en la tabla."
     );
   }
 
   // ---------- Leyenda ----------
 
-  function pintarLeyenda(cuerpo) {
+  // `proyeccion`: texto de la clave del tramo punteado ("Proyección del FMI desde 2026"), o null.
+  function pintarLeyenda(cuerpo, proyeccion) {
     el.leyenda.replaceChildren();
     for (const s of cuerpo.series) {
       const li = document.createElement("li");
@@ -852,6 +966,15 @@
         `<button type="button" class="leyenda-item serie-${ranuras.get(s.pais) || 1}" data-codigo="${escapar(s.pais)}" ` +
         `data-nombre="${escapar(s.nombre)}" aria-pressed="${!ocultas.has(s.pais)}">` +
         `<span class="leyenda-linea" aria-hidden="true"></span><span>${escapar(s.nombre)}</span></button>`;
+      el.leyenda.append(li);
+    }
+    if (proyeccion) {
+      // Clave de la línea punteada y la banda: no es un botón (no hay nada que ocultar).
+      const li = document.createElement("li");
+      li.className = "leyenda-clave";
+      li.innerHTML =
+        `<span class="leyenda-item leyenda-proyeccion"><span class="leyenda-linea" aria-hidden="true"></span>` +
+        `<span>${escapar(proyeccion)}</span></span>`;
       el.leyenda.append(li);
     }
   }
@@ -886,12 +1009,21 @@
     thead.innerHTML = cabeza.join("");
 
     const mapas = cuerpo.series.map((s) => new Map(s.datos.map((d) => [clave(d), d.valor])));
+    // Años proyectados (FMI): fondo de la banda de la gráfica y «proy.» escrito junto al año, no solo color.
+    const proyectados = periodosProyectados(cuerpo);
+    const primerProyectado = anios.find((a) => proyectados.has(a));
     const fila = (a) => {
       const celdas = mapas.map((m) => {
         const v = m.get(a);
         return v == null ? '<td class="sin-dato">—</td>' : `<td>${formatear(v)}</td>`;
       });
-      return `<tr><th scope="row">${escapar(textoPeriodo(a, frecuencia))}</th>${celdas.join("")}</tr>`;
+      const periodo = escapar(textoPeriodo(a, frecuencia));
+      if (!proyectados.has(a)) return `<tr><th scope="row">${periodo}</th>${celdas.join("")}</tr>`;
+      const clase = a === primerProyectado ? "fila-proyeccion inicio-proyeccion" : "fila-proyeccion";
+      return (
+        `<tr class="${clase}"><th scope="row">${periodo}<span class="marca-proyeccion" aria-hidden="true">proy.</span>` +
+        `<span class="oculto-visual"> (proyección)</span></th>${celdas.join("")}</tr>`
+      );
     };
     if (frecuencia === "mensual" || frecuencia === "diaria") {
       // Series largas (miles de cotizaciones): un grupo por año con su año fijo arriba al desplazarse.
@@ -912,7 +1044,9 @@
       ponerCuerpo(`<tbody>${anios.map(fila).join("")}</tbody>`);
     }
     medirCabeza();
-    el.notaTabla.textContent = textoUnidad(cuerpo.indicador) + (cuerpo.base != null ? ` (${cuerpo.base} = 100)` : "") + ". «—»: sin dato.";
+    el.notaTabla.textContent =
+      textoUnidad(cuerpo.indicador) + (cuerpo.base != null ? ` (${cuerpo.base} = 100)` : "") + ". «—»: sin dato." +
+      (primerProyectado !== undefined ? ` «proy.»: ${textoProyeccion(cuerpo, true)}, desde ${primerProyectado}.` : "");
   }
 
   // La fila del año queda fija justo debajo del encabezado, que puede ocupar una o varias líneas.
