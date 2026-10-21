@@ -8,7 +8,7 @@ from sqlalchemy import select
 
 from app.etl.fmi import cargar_fmi
 from app.models import Sesion
-from tests.ayudas import configurar_2fa, csrf_de, registrar, vencer
+from tests.ayudas import completar_2fa, csrf_de, registrar, vencer
 
 PARAMS = {"indicador": "PBI_USD_CORR", "paises": "URY"}
 
@@ -24,14 +24,14 @@ def test_sin_sesion(cliente_web):
 
 def test_sesion_sin_2fa(cliente_web):
     registrar(cliente_web)
-    assert cliente_web.get("/").headers["location"] == "/2fa/configurar"
+    assert cliente_web.get("/").headers["location"] == "/2fa/verificar"
     assert cliente_web.get("/api/series", params=PARAMS).status_code == 401
 
 
-def test_sesion_completa(cliente_web, sesion_con_semillas, cliente_fmi):
+def test_sesion_completa(cliente_web, sesion_con_semillas, cliente_fmi, buzon):
     cargar_fmi(sesion_con_semillas, cliente_fmi, espera=0)
     registrar(cliente_web)
-    configurar_2fa(cliente_web)
+    completar_2fa(cliente_web, buzon)
     r = cliente_web.get("/")
     assert r.status_code == 200 and "Ana Pérez" in r.text
     assert cliente_web.get("/api/series", params=PARAMS).status_code == 200
@@ -166,7 +166,7 @@ def test_portada_con_muestra_real_y_cobertura(cliente_web, sesion_con_semillas, 
 def test_portada_no_va_en_las_pantallas_del_doble_factor(cliente_web, sesion_con_semillas, cliente_fmi):
     cargar_fmi(sesion_con_semillas, cliente_fmi, espera=0)
     registrar(cliente_web)
-    assert "acceso-portada" not in cliente_web.get("/2fa/configurar").text
+    assert "acceso-portada" not in cliente_web.get("/2fa/verificar").text
 
 
 def test_datos_portada_hasta_el_ultimo_anio_cerrado(sesion_con_semillas, cliente_fmi):

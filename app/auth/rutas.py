@@ -1,17 +1,15 @@
 """Páginas de acceso: registro, login, doble factor y salida."""
 
-import segno
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import RedirectResponse
-from markupsafe import Markup
 from sqlalchemy.orm import Session
 
-from app.auth import cuentas, seguridad
+from app.auth import cuentas
 from app.auth.csrf import verificar_csrf
-from app.auth.dependencias import destino_segundo_factor, sesion_actual, sesion_pendiente
+from app.auth.dependencias import RUTA_SEGUNDO_FACTOR, sesion_actual, sesion_pendiente
 from app.auth.sesiones import borrar_cookie, cerrar_sesion, completar_mfa, crear_sesion
 from app.db import get_db
-from app.models import Sesion
+from app.models import Sesion, Usuario
 from app.web.plantillas import renderizar
 from app.web.portada import datos_portada
 
@@ -23,6 +21,12 @@ AVISOS = {
     "google": "No se pudo completar el ingreso con Google. Probá de nuevo.",
     "google_email": "Google no confirmó que ese email sea tuyo. Verificalo en tu cuenta de Google o entrá con tu contraseña.",
 }
+# Problemas al mandar el código, que llegan a /2fa/verificar por ?aviso=...
+ERRORES_CODIGO = {
+    "envio": cuentas.MENSAJE_ENVIO,
+    "limite": f"Ya te mandamos {cuentas.MAX_ENVIOS_POR_HORA} códigos en la última hora. "
+              "Usá el último que te llegó o probá de nuevo más tarde.",
+}
 
 
 def _redirigir(url: str) -> RedirectResponse:
@@ -33,7 +37,15 @@ def _segun_sesion(sesion: Sesion | None) -> RedirectResponse | None:
     """Si ya hay sesión, a dónde mandar al usuario en lugar de mostrarle login o registro."""
     if sesion is None:
         return None
-    return _redirigir("/" if sesion.mfa_ok else destino_segundo_factor(sesion.usuario))
+    return _redirigir("/" if sesion.mfa_ok else RUTA_SEGUNDO_FACTOR)
+
+
+def _al_segundo_factor(db: Session, usuario: Usuario, request: Request) -> RedirectResponse:
+    """Abre la sesión pendiente, manda el código al email y lleva a la pantalla para escribirlo."""
+    aviso = cuentas.iniciar_segundo_factor(db, usuario)
+    respuesta = _redirigir(RUTA_SEGUNDO_FACTOR + (f"?aviso={aviso}" if aviso else ""))
+    crear_sesion(db, usuario, request, respuesta)
+    return respuesta
 
 
 # --- Login ---
@@ -62,9 +74,7 @@ def entrar(
         return renderizar(
             request, "login.html", {"error": str(e), "email": email.strip(), "portada": datos_portada(db)}, estado=400
         )
-    respuesta = _redirigir(destino_segundo_factor(usuario))
-    crear_sesion(db, usuario, request, respuesta)
-    return respuesta
+    return _al_segundo_factor(db, usuario, request)
 
 
 # --- Registro ---
@@ -96,59 +106,28 @@ def registrarse(
             estado=400,
         )
     usuario = cuentas.registrar(db, datos)
-    respuesta = _redirigir("/2fa/configurar")
-    crear_sesion(db, usuario, request, respuesta)
-    return respuesta
+    return _al_segundo_factor(db, usuario, request)
 
 
-# --- Doble factor ---
+# --- Doble factor: código por email ---
 
-def _contexto_configurar(db: Session, sesion: Sesion) -> dict:
+def _pantalla_codigo(request: Request, sesion: Sesion, estado: int = 200, **contexto):
     usuario = sesion.usuario
-    secreto = cuentas.secreto_pendiente(db, usuario)
-    qr = segno.make(seguridad.uri_totp(secreto, usuario.email), error="m")
-    svg = qr.svg_inline(scale=1, border=2, omitsize=True, svgclass="qr", title="Código QR para la app de autenticación")
-    clave = " ".join(secreto[i:i + 4] for i in range(0, len(secreto), 4))
-    return {"usuario": usuario, "qr": Markup(svg), "clave": clave}
-
-
-@router.get("/2fa/configurar")
-def ver_configurar(request: Request, sesion: Sesion = Depends(sesion_pendiente), db: Session = Depends(get_db)):
-    if sesion.mfa_ok:
-        return _redirigir("/")
-    if sesion.usuario.totp_activo:
-        return _redirigir("/2fa/verificar")
-    return renderizar(request, "2fa_configurar.html", _contexto_configurar(db, sesion))
-
-
-@router.post("/2fa/configurar")
-def configurar(
-    request: Request,
-    codigo: str = Form(""),
-    csrf: str = Form(""),
-    sesion: Sesion = Depends(sesion_pendiente),
-    db: Session = Depends(get_db),
-):
-    verificar_csrf(request, csrf)
-    if sesion.mfa_ok or sesion.usuario.totp_activo:
-        return _redirigir("/")
-    try:
-        codigos = cuentas.activar_2fa(db, sesion.usuario, codigo)
-    except cuentas.ErrorCuenta as e:
-        contexto = _contexto_configurar(db, sesion) | {"error": str(e)}
-        return renderizar(request, "2fa_configurar.html", contexto, estado=400)
-    respuesta = renderizar(request, "2fa_codigos.html", {"codigos": codigos, "usuario": sesion.usuario})
-    completar_mfa(db, sesion, respuesta)
-    return respuesta
+    if "error" not in contexto and cuentas.minutos_de_bloqueo(usuario):
+        contexto["error"] = cuentas.mensaje_bloqueo(usuario)
+    minutos = int(cuentas.VIGENCIA_CODIGO.total_seconds() // 60)
+    return renderizar(request, "2fa_verificar.html", {"usuario": usuario, "minutos": minutos, **contexto}, estado=estado)
 
 
 @router.get("/2fa/verificar")
-def ver_verificar(request: Request, sesion: Sesion = Depends(sesion_pendiente)):
+def ver_verificar(request: Request, aviso: str = "", sesion: Sesion = Depends(sesion_pendiente)):
     if sesion.mfa_ok:
         return _redirigir("/")
-    if not sesion.usuario.totp_activo:
-        return _redirigir("/2fa/configurar")
-    return renderizar(request, "2fa_verificar.html", {"usuario": sesion.usuario})
+    if aviso in ERRORES_CODIGO:
+        return _pantalla_codigo(request, sesion, error=ERRORES_CODIGO[aviso])
+    if aviso == "reenviado":
+        return _pantalla_codigo(request, sesion, aviso="Te mandamos un código nuevo. El anterior ya no sirve.")
+    return _pantalla_codigo(request, sesion)
 
 
 @router.post("/2fa/verificar")
@@ -162,15 +141,32 @@ def verificar(
     verificar_csrf(request, csrf)
     if sesion.mfa_ok:
         return _redirigir("/")
-    if not sesion.usuario.totp_activo:
-        return _redirigir("/2fa/configurar")
     try:
-        cuentas.verificar_segundo_factor(db, sesion.usuario, codigo)
+        cuentas.verificar_codigo(db, sesion.usuario, codigo)
     except cuentas.ErrorCuenta as e:
-        return renderizar(request, "2fa_verificar.html", {"usuario": sesion.usuario, "error": str(e)}, estado=400)
+        return _pantalla_codigo(request, sesion, estado=400, error=str(e), codigo_invalido=True)
     respuesta = _redirigir("/")
     completar_mfa(db, sesion, respuesta)
     return respuesta
+
+
+@router.post("/2fa/reenviar")
+def reenviar(
+    request: Request,
+    csrf: str = Form(""),
+    sesion: Sesion = Depends(sesion_pendiente),
+    db: Session = Depends(get_db),
+):
+    verificar_csrf(request, csrf)
+    if sesion.mfa_ok:
+        return _redirigir("/")
+    try:
+        cuentas.enviar_codigo(db, sesion.usuario)
+    except (cuentas.EsperaReenvio, cuentas.LimiteEnvios) as e:
+        return _pantalla_codigo(request, sesion, estado=429, error=str(e))
+    except cuentas.ErrorCuenta as e:
+        return _pantalla_codigo(request, sesion, estado=400, error=str(e))
+    return _redirigir(f"{RUTA_SEGUNDO_FACTOR}?aviso=reenviado")
 
 
 # --- Salir ---

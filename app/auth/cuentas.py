@@ -1,15 +1,16 @@
-"""Reglas de las cuentas: registro, login con bloqueo por intentos y doble factor."""
+"""Reglas de las cuentas: registro, login con bloqueo por intentos y doble factor por email."""
 
+import math
 from dataclasses import dataclass
 from datetime import timedelta
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.auth import seguridad
+from app.auth import correo, seguridad
 from app.auth.sesiones import ahora, con_zona
 from app.config import get_settings
-from app.models import CodigoRecuperacion, Usuario
+from app.models import CodigoEmail, Usuario
 
 MAX_INTENTOS = 5
 DURACION_BLOQUEO = timedelta(minutes=15)
@@ -105,7 +106,7 @@ def registrar_fallo(db: Session, usuario: Usuario) -> None:
 
 
 def registrar_fallo_2fa(db: Session, usuario: Usuario) -> None:
-    """Fallo de código (TOTP o recuperación). Este contador no lo reinicia la contraseña."""
+    """Fallo del código del email. Este contador no lo reinicia la contraseña."""
     usuario.intentos_2fa += 1
     if usuario.intentos_2fa >= MAX_INTENTOS:
         usuario.bloqueado_hasta = ahora() + DURACION_BLOQUEO
@@ -134,59 +135,117 @@ def autenticar(db: Session, email: str, password: str) -> Usuario:
     return usuario
 
 
-# --- Doble factor ---
+# --- Doble factor: código por email ---
 
-def secreto_pendiente(db: Session, usuario: Usuario) -> str:
-    """Secreto TOTP a configurar. Se conserva entre recargas para no invalidar un QR ya escaneado."""
-    if usuario.totp_secret_cifrado is None:
-        usuario.totp_secret_cifrado = seguridad.cifrar(seguridad.nuevo_secreto_totp())
-        db.commit()
-    return seguridad.descifrar(usuario.totp_secret_cifrado)
+VIGENCIA_CODIGO = timedelta(minutes=10)
+ESPERA_REENVIO = timedelta(seconds=60)
+MAX_ENVIOS_POR_HORA = 5
+CONSERVAR_CODIGOS = timedelta(days=1)  # las filas más viejas se borran al mandar uno nuevo
+
+MENSAJE_CODIGO = "El código no es correcto. Revisalo en el correo o pedí uno nuevo."
+MENSAJE_SIN_CODIGO = "Ese código venció o ya se usó. Pedí uno nuevo con «Reenviar código»."
+MENSAJE_ENVIO = (
+    "No pudimos mandarte el código por email. Probá de nuevo en unos minutos con «Reenviar código»."
+)
 
 
-def _verificar_totp(db: Session, usuario: Usuario, codigo: str) -> bool:
-    paso = seguridad.verificar_totp(
-        seguridad.descifrar(usuario.totp_secret_cifrado), codigo, usuario.totp_ultimo_paso
+class EsperaReenvio(ErrorCuenta):
+    """Se pidió otro código antes de que pasara ESPERA_REENVIO desde el anterior."""
+
+
+class LimiteEnvios(ErrorCuenta):
+    """Se mandaron MAX_ENVIOS_POR_HORA códigos en la última hora."""
+
+
+def _codigos(db: Session, usuario: Usuario) -> list[CodigoEmail]:
+    """Los códigos del usuario, del más nuevo al más viejo."""
+    return list(db.scalars(
+        select(CodigoEmail).where(CodigoEmail.usuario_id == usuario.id).order_by(CodigoEmail.id.desc())
+    ))
+
+
+def _vigente(codigos: list[CodigoEmail], momento) -> CodigoEmail | None:
+    """Solo vale el último código, si no se usó ni venció."""
+    if codigos and codigos[0].usado_en is None and con_zona(codigos[0].expira_en) > momento:
+        return codigos[0]
+    return None
+
+
+def enviar_codigo(db: Session, usuario: Usuario) -> None:
+    """Genera un código nuevo (el anterior deja de valer) y lo manda al email del usuario.
+
+    Lanza EsperaReenvio o LimiteEnvios si hay que esperar, y ErrorCuenta si la cuenta está bloqueada
+    o no se pudo mandar el correo.
+    """
+    if minutos_de_bloqueo(usuario):
+        raise ErrorCuenta(mensaje_bloqueo(usuario))
+    momento = ahora()
+    codigos = _codigos(db, usuario)
+    vigente = _vigente(codigos, momento)
+    if vigente is not None:
+        falta = math.ceil((con_zona(vigente.creado_en) + ESPERA_REENVIO - momento).total_seconds())
+        if falta > 0:
+            raise EsperaReenvio(f"Esperá {falta} {'segundo' if falta == 1 else 'segundos'} antes de pedir otro código.")
+    hace_una_hora = momento - timedelta(hours=1)
+    recientes = [c for c in codigos if con_zona(c.creado_en) > hace_una_hora]
+    if len(recientes) >= MAX_ENVIOS_POR_HORA:
+        minutos = max(1, -(-int((con_zona(recientes[-1].creado_en) - hace_una_hora).total_seconds()) // 60))
+        raise LimiteEnvios(
+            f"Ya te mandamos {MAX_ENVIOS_POR_HORA} códigos en la última hora. "
+            f"Probá de nuevo en {minutos} {'minuto' if minutos == 1 else 'minutos'}."
+        )
+    for c in codigos:
+        if con_zona(c.creado_en) < momento - CONSERVAR_CODIGOS:
+            db.delete(c)
+        elif c.usado_en is None:
+            c.usado_en = momento  # anulado: solo vale el nuevo
+    codigo = seguridad.nuevo_codigo_email()
+    fila = CodigoEmail(
+        usuario_id=usuario.id,
+        hash=seguridad.hash_codigo_email(usuario.id, codigo),
+        creado_en=momento,
+        expira_en=momento + VIGENCIA_CODIGO,
     )
-    if paso is None:
-        return False
-    usuario.totp_ultimo_paso = paso
+    db.add(fila)
     db.commit()
-    return True
+    try:
+        correo.enviar_codigo(usuario.email, usuario.nombre, codigo, int(VIGENCIA_CODIGO.total_seconds() // 60))
+    except correo.ErrorCorreo:
+        fila.usado_en = ahora()  # nunca llegó: no sirve ni frena el próximo pedido (sí cuenta para el límite)
+        db.commit()
+        raise ErrorCuenta(MENSAJE_ENVIO) from None
 
 
-MENSAJE_CODIGO = "El código no es correcto o ya se usó. Esperá a que la app muestre uno nuevo."
+def iniciar_segundo_factor(db: Session, usuario: Usuario) -> str | None:
+    """Al entrar con contraseña o con Google: manda el código. Devuelve un aviso (clave) si no se pudo.
+
+    Si hace menos de un minuto ya se mandó uno que sigue vigente, no se manda otro: vale ese.
+    """
+    try:
+        enviar_codigo(db, usuario)
+    except EsperaReenvio:
+        return None
+    except LimiteEnvios:
+        return "limite"
+    except ErrorCuenta:
+        # Cuenta bloqueada (la pantalla del código lo explica) o falló el correo.
+        return None if minutos_de_bloqueo(usuario) else "envio"
+    return None
 
 
-def activar_2fa(db: Session, usuario: Usuario, codigo: str) -> list[str]:
-    """Confirma la configuración con un código y devuelve los códigos de recuperación (en claro, una sola vez)."""
+def verificar_codigo(db: Session, usuario: Usuario, codigo: str) -> None:
+    """Acepta el último código mandado, una sola vez y dentro de su vigencia. Si no, lanza ErrorCuenta."""
     if minutos_de_bloqueo(usuario):
         raise ErrorCuenta(mensaje_bloqueo(usuario))
-    if usuario.totp_secret_cifrado is None or not _verificar_totp(db, usuario, codigo):
-        registrar_fallo_2fa(db, usuario)
-        raise ErrorCuenta(mensaje_bloqueo(usuario) if minutos_de_bloqueo(usuario) else MENSAJE_CODIGO)
-    codigos = seguridad.nuevos_codigos_recuperacion()
-    usuario.codigos_recuperacion = [CodigoRecuperacion(hash=seguridad.hash_codigo_recuperacion(c)) for c in codigos]
-    usuario.totp_activo = True
-    db.commit()
-    return codigos
-
-
-def verificar_segundo_factor(db: Session, usuario: Usuario, codigo: str) -> str:
-    """Acepta un código TOTP o uno de recuperación (que queda usado). Devuelve "totp" o "recuperacion"."""
-    if minutos_de_bloqueo(usuario):
-        raise ErrorCuenta(mensaje_bloqueo(usuario))
-    limpio = codigo.strip()
-    if limpio.replace(" ", "").isdigit():
-        if _verificar_totp(db, usuario, limpio):
-            return "totp"
-    else:
-        buscado = seguridad.hash_codigo_recuperacion(limpio)
-        for guardado in usuario.codigos_recuperacion:
-            if guardado.usado_en is None and guardado.hash == buscado:
-                guardado.usado_en = ahora()
-                db.commit()
-                return "recuperacion"
+    momento = ahora()
+    vigente = _vigente(_codigos(db, usuario), momento)
+    if vigente is None:
+        # Sin un código vigente no hay nada que adivinar: no cuenta como intento fallido.
+        raise ErrorCuenta(MENSAJE_SIN_CODIGO)
+    limpio = "".join(codigo.split())
+    if len(limpio) == 6 and limpio.isdigit() and seguridad.codigo_email_coincide(vigente.hash, usuario.id, limpio):
+        vigente.usado_en = momento
+        db.commit()
+        return
     registrar_fallo_2fa(db, usuario)
-    raise ErrorCuenta(mensaje_bloqueo(usuario) if minutos_de_bloqueo(usuario) else
-                      "El código no es correcto o ya se usó.")
+    raise ErrorCuenta(mensaje_bloqueo(usuario) if minutos_de_bloqueo(usuario) else MENSAJE_CODIGO)

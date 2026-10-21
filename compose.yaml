@@ -24,7 +24,7 @@ services:
     build:
       context: .
       dockerfile: Containerfile
-    image: localhost/extraccion-datos-economicos:0.2.5
+    image: localhost/extraccion-datos-economicos:0.2.6
     restart: unless-stopped
     env_file: .env
     environment:

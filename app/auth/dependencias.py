@@ -15,8 +15,8 @@ class RequiereIngreso(Exception):
         self.destino = destino
 
 
-def destino_segundo_factor(usuario: Usuario) -> str:
-    return "/2fa/verificar" if usuario.totp_activo else "/2fa/configurar"
+# Pantalla del segundo factor (el código que llega por email). Es obligatoria para todos.
+RUTA_SEGUNDO_FACTOR = "/2fa/verificar"
 
 
 def sesion_actual(request: Request, db: Session = Depends(get_db)) -> Sesion | None:
@@ -36,7 +36,7 @@ def usuario_actual(sesion: Sesion | None = Depends(sesion_actual)) -> Usuario:
     if sesion is None:
         raise RequiereIngreso("/login")
     if not sesion.mfa_ok:
-        raise RequiereIngreso(destino_segundo_factor(sesion.usuario))
+        raise RequiereIngreso(RUTA_SEGUNDO_FACTOR)
     return sesion.usuario
 
 

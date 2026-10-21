@@ -9,12 +9,50 @@ y el proyecto usa [versionado semántico](https://semver.org/lang/es/).
 
 ### Por hacer
 
-- Verificación del email al registrarse y recuperación de contraseña.
+- Recuperación de contraseña.
 - Pedir autorización al BCU antes de redistribuir o cobrar por sus datos: sus
   términos solo permiten la reproducción sin fines de lucro, citando la
   fuente.
 - Decidir qué hacer con el error de origen del BCU del 27/04/2000 (venta
   1,905).
+
+## [0.2.6] - 2026-10-20
+
+Código de ingreso por email en lugar de la app de autenticación.
+
+### Cambiado
+
+- **Doble factor por email**: en lugar de la app de autenticación con QR, al
+  ingresar (con contraseña o con Google) y al registrarse se manda un código de
+  6 dígitos al email de la cuenta. Vence a los 10 minutos, sirve una sola vez y
+  al pedir otro el anterior deja de valer. Se guarda solo su hash.
+- Botón «Reenviar código», con 60 segundos de espera entre envíos y hasta 5
+  envíos por hora por cuenta. Se mantiene el bloqueo de 15 minutos tras 5
+  códigos equivocados.
+- Los usuarios que ya tenían configurada la app de autenticación no tienen que
+  hacer nada: en el próximo ingreso reciben el código por email.
+- Si el correo no está configurado (desarrollo), el código se escribe en el
+  registro de la app en lugar de mandarse.
+
+### Quitado
+
+- La configuración con QR y los códigos de recuperación. `APP_ENCRYPTION_KEY`
+  ya no se usa (se puede borrar del `.env`), y salen las dependencias `pyotp`,
+  `segno` y `cryptography` (esta última la sigue instalando `authlib`).
+
+### Para actualizar
+
+- Cambia la forma de ingresar: después de la contraseña (o de Google) se pide
+  el código que llega por email. Los usuarios existentes no tienen que hacer
+  nada: en su próximo ingreso reciben el código en el email de su cuenta.
+- Agregar al `.env` las variables del correo: `SMTP_USER` (la cuenta de Gmail)
+  y `SMTP_PASSWORD` (una contraseña de aplicación, creada en
+  https://myaccount.google.com/apppasswords con la verificación en 2 pasos
+  activada); opcionales `SMTP_FROM`, `SMTP_HOST` y `SMTP_PORT`. Ver
+  `.env.example` y "Correo (código de ingreso)" en el README.
+- Reconstruir la imagen (`podman-compose up -d --build`; si el contenedor no
+  cambia, agregar `--force-recreate`) para aplicar la migración 0006, que crea
+  la tabla de códigos y saca el secreto TOTP y los códigos de recuperación.
 
 ## [0.2.5] - 2026-10-20
 
@@ -183,7 +221,8 @@ Primera versión funcional del sistema.
 - **Instalación con contenedores**: archivos listos para levantar la aplicación
   y la base de datos con Podman.
 
-[Pendiente]: https://github.com/rubendario50/Extraccion-de-Datos-Economicos-/compare/v0.2.5...HEAD
+[Pendiente]: https://github.com/rubendario50/Extraccion-de-Datos-Economicos-/compare/v0.2.6...HEAD
+[0.2.6]: https://github.com/rubendario50/Extraccion-de-Datos-Economicos-/compare/v0.2.5...v0.2.6
 [0.2.5]: https://github.com/rubendario50/Extraccion-de-Datos-Economicos-/compare/v0.2.4...v0.2.5
 [0.2.4]: https://github.com/rubendario50/Extraccion-de-Datos-Economicos-/compare/v0.2.3...v0.2.4
 [0.2.3]: https://github.com/rubendario50/Extraccion-de-Datos-Economicos-/compare/v0.2.2...v0.2.3

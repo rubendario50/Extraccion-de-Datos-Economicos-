@@ -7,7 +7,7 @@ from sqlalchemy import select
 from app.auth import google
 from app.config import get_settings
 from app.models import Sesion, Usuario
-from tests.ayudas import registrar
+from tests.ayudas import completar_2fa, registrar, verificar
 
 
 class GoogleFalso:
@@ -59,15 +59,37 @@ def test_boton_visible_e_inicio(cliente_web, con_google):
     assert falso.redirect_uri == "http://localhost:8000/auth/google/callback"
 
 
-def test_cuenta_nueva(cliente_web, sesion_con_semillas, con_google):
+def test_cuenta_nueva(cliente_web, sesion_con_semillas, con_google, buzon):
     con_google(userinfo=datos_google())
     r = cliente_web.get("/auth/google/callback?code=abc&state=xyz")
-    assert r.status_code == 303 and r.headers["location"] == "/2fa/configurar"
+    assert r.status_code == 303 and r.headers["location"] == "/2fa/verificar"
     u = sesion_con_semillas.scalar(select(Usuario))
     assert (u.email, u.nombre, u.google_sub, u.password_hash) == ("ana@gmail.com", "Ana Google", "1234567890", None)
     assert not sesion_con_semillas.scalar(select(Sesion)).mfa_ok
-    # También tiene que pasar por el doble factor.
-    assert cliente_web.get("/").headers["location"] == "/2fa/configurar"
+    # También tiene que pasar por el doble factor: el código va al email de la cuenta.
+    assert cliente_web.get("/").headers["location"] == "/2fa/verificar"
+    assert [m["destino"] for m in buzon.enviados] == ["ana@gmail.com"]
+    assert cliente_web.get("/api/series", params={"indicador": "PBI_USD_CORR", "paises": "URY"}).status_code == 401
+    malo = "000000" if buzon.ultimo() != "000000" else "999999"
+    assert verificar(cliente_web, malo).status_code == 400
+    completar_2fa(cliente_web, buzon)
+    assert cliente_web.get("/").status_code == 200
+
+
+def test_google_con_cuenta_bloqueada(cliente_web, sesion_con_semillas, con_google, buzon):
+    from datetime import timedelta
+
+    from app.auth.sesiones import ahora
+
+    con_google(userinfo=datos_google())
+    sesion_con_semillas.add(Usuario(email="ana@gmail.com", nombre="Ana", google_sub="1234567890",
+                                    bloqueado_hasta=ahora() + timedelta(minutes=10)))
+    sesion_con_semillas.commit()
+    r = cliente_web.get("/auth/google/callback?code=abc")
+    assert r.headers["location"] == "/2fa/verificar"
+    assert buzon.enviados == []  # bloqueada: no se manda código
+    assert "bloqueamos el ingreso" in cliente_web.get("/2fa/verificar").text
+    assert cliente_web.get("/").headers["location"] == "/2fa/verificar"
 
 
 def test_vincula_cuenta_existente_con_email_verificado(cliente_web, sesion_con_semillas, con_google):

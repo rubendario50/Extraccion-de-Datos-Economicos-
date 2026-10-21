@@ -2,12 +2,12 @@ import json
 import os
 from pathlib import Path
 
-from cryptography.fernet import Fernet
-
 # Antes de importar la app: la configuración se lee una sola vez.
-os.environ.setdefault("APP_ENCRYPTION_KEY", Fernet.generate_key().decode())
 os.environ.setdefault("SECRET_KEY", "clave-solo-para-los-tests")
 os.environ.setdefault("COOKIE_SECURE", "false")
+# Aunque el .env de la PC tenga Gmail configurado, los tests nunca mandan correo de verdad.
+os.environ["SMTP_USER"] = ""
+os.environ["SMTP_PASSWORD"] = ""
 
 import httpx
 import pytest
@@ -20,7 +20,7 @@ import app.models  # noqa: F401
 from app.db import Base, get_db
 from app.etl.semillas import cargar_semillas
 from app.main import app as aplicacion
-from tests.ayudas import entrar_directo
+from tests.ayudas import Buzon, entrar_directo
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -100,6 +100,14 @@ def transporte_bm(llamadas: list | None = None, filas: dict[str, list] | None = 
 def cliente_bm():
     with httpx.Client(transport=transporte_bm(), base_url="https://bm.test/v2") as c:
         yield c
+
+
+@pytest.fixture(autouse=True)
+def buzon(monkeypatch):
+    """Reemplaza el envío de correo: los códigos quedan en la lista `buzon.enviados`."""
+    falso = Buzon()
+    monkeypatch.setattr("app.auth.correo.enviar_codigo", falso.enviar_codigo)
+    return falso
 
 
 @pytest.fixture

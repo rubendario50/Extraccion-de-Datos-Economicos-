@@ -1,6 +1,5 @@
 """Aplicación FastAPI."""
 
-from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, Request
@@ -13,7 +12,6 @@ from app.api import series
 from app.auth import google, rutas
 from app.auth.csrf import ErrorCsrf
 from app.auth.dependencias import RequiereIngreso
-from app.auth.seguridad import verificar_configuracion
 from app.config import get_settings
 from app.web import panel
 from app.web.plantillas import renderizar
@@ -42,18 +40,11 @@ CABECERAS_SEGURIDAD = {
 }
 
 
-@asynccontextmanager
-async def ciclo_de_vida(_app: FastAPI):
-    verificar_configuracion()  # falla al arrancar si falta APP_ENCRYPTION_KEY
-    yield
-
-
 ajustes = get_settings()
 # Sistema cerrado: sin /docs, /redoc ni /openapi.json públicos (la API está descrita en el README).
 app = FastAPI(
     title="Extracción de Datos Económicos",
     version=__version__,
-    lifespan=ciclo_de_vida,
     docs_url=None,
     redoc_url=None,
     openapi_url=None,

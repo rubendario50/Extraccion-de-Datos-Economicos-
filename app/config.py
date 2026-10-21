@@ -10,12 +10,17 @@ class Settings(BaseSettings):
 
     database_url: str = "postgresql+psycopg://datos:datos@localhost:5432/datos"
     secret_key: str = "cambiar-en-produccion"
-    app_encryption_key: str = ""
     cookie_secure: bool = False
     admin_email: str = ""
     google_client_id: str = ""
     google_client_secret: str = ""
     base_url: str = "http://localhost:8000"
+    # Correo saliente (código del doble factor). Sin usuario y contraseña, el código va al registro.
+    smtp_host: str = "smtp.gmail.com"
+    smtp_port: int = 587
+    smtp_user: str = ""
+    smtp_password: str = ""
+    smtp_from: str = ""  # vacío: se usa SMTP_USER
 
 
 @lru_cache

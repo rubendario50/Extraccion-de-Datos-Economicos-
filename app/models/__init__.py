@@ -9,10 +9,10 @@ from app.models.datos import (
 )
 from app.models.indicadores import Fuente, Indicador, IndicadorSerieExterna
 from app.models.paises import Pais, PaisCodigoExterno
-from app.models.usuarios import CodigoRecuperacion, Sesion, Usuario
+from app.models.usuarios import CodigoEmail, Sesion, Usuario
 
 __all__ = [
-    "CodigoRecuperacion",
+    "CodigoEmail",
     "CotizacionDiaria",
     "DatoInternacionalAnual",
     "DatoInternacionalMensual",

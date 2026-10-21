@@ -11,7 +11,7 @@ Plataforma de recopilación, análisis y difusión de datos económicos internac
 
 ## Estado
 
-Versión actual: 0.2.5 (ver `CHANGELOG.md`).
+Versión actual: 0.2.6 (ver `CHANGELOG.md`).
 
 Desde la 0.1: base de datos PostgreSQL en Podman, tabla maestra de países (`data/seed/paises.csv`), carga del PBI del FMI DataMapper (PBI en dólares corrientes y crecimiento real) y una web con login (contraseña o Google, doble factor obligatorio) donde se eligen indicador, países y años y se ven la gráfica y la tabla, con opción de índice base 100. La arquitectura está en `docs/arquitectura.md`.
 
@@ -31,7 +31,7 @@ pipx install podman-compose          # o: pip install --user podman-compose
 
 git clone https://github.com/rubendario50/Extraccion-de-Datos-Economicos-.git
 cd Extraccion-de-Datos-Economicos-
-cp .env.example .env                 # editar .env: POSTGRES_PASSWORD, SECRET_KEY y APP_ENCRYPTION_KEY (ver "Claves")
+cp .env.example .env                 # editar .env: POSTGRES_PASSWORD, SECRET_KEY y SMTP_* (ver "Claves")
 podman-compose up -d                 # construye la imagen, levanta la base y la web
 ```
 
@@ -47,22 +47,39 @@ pip install podman-compose
 
 git clone https://github.com/rubendario50/Extraccion-de-Datos-Economicos-.git
 cd Extraccion-de-Datos-Economicos-
-copy .env.example .env               # editar .env: POSTGRES_PASSWORD, SECRET_KEY y APP_ENCRYPTION_KEY (ver "Claves")
+copy .env.example .env               # editar .env: POSTGRES_PASSWORD, SECRET_KEY y SMTP_* (ver "Claves")
 podman-compose up -d
 ```
 
 ### Claves
 
-Antes del primer arranque hay que completar dos claves en el `.env` (la app no arranca sin `APP_ENCRYPTION_KEY`). Se generan con Python, en cualquier PC:
+Antes del primer arranque hay que completar `SECRET_KEY` en el `.env`. Se genera con Python, en cualquier PC:
 
 ```bash
-python -c "import secrets; print(secrets.token_urlsafe(48))"                               # SECRET_KEY
-python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"  # APP_ENCRYPTION_KEY
+python -c "import secrets; print(secrets.token_urlsafe(48))"   # SECRET_KEY
 ```
 
-(En Windows, `py` en lugar de `python`. La segunda necesita el paquete `cryptography`; si no está, se puede correr dentro del contenedor: `podman-compose run --rm app python -c "..."`.)
+(En Windows, `py` en lugar de `python`.)
 
-`APP_ENCRYPTION_KEY` cifra el secreto del doble factor de cada usuario: si se pierde o se cambia, hay que volver a configurar el doble factor de todos. `ADMIN_EMAIL` define qué email queda como administrador al registrarse.
+`ADMIN_EMAIL` define qué email queda como administrador al registrarse.
+
+### Correo (código de ingreso)
+
+El doble factor es un código que se manda al email de cada usuario, así que la app necesita una cuenta de Gmail para mandar correos. Se usa una **contraseña de aplicación** (no la contraseña normal de la cuenta):
+
+1. En la cuenta de Gmail que va a mandar los correos, activar la **verificación en 2 pasos** (https://myaccount.google.com/security).
+2. Entrar a https://myaccount.google.com/apppasswords, crear una contraseña de aplicación (por ejemplo «Datos Económicos») y copiar los 16 caracteres.
+3. Completar en el `.env`:
+
+```
+SMTP_USER=la-cuenta@gmail.com
+SMTP_PASSWORD=los 16 caracteres de la contraseña de aplicación
+SMTP_FROM=                # opcional; vacío = SMTP_USER
+```
+
+`SMTP_HOST` y `SMTP_PORT` ya vienen con `smtp.gmail.com` y `587` (STARTTLS). Después de cambiar el `.env`, recrear el contenedor: `podman-compose up -d --force-recreate app`.
+
+Si `SMTP_USER` o `SMTP_PASSWORD` quedan vacíos (para probar en la PC), no se manda ningún correo: el código aparece en el registro de la app (`podman-compose logs app`) como `Correo sin configurar: código para <email>: 123456`.
 
 ### Cargar los datos
 
@@ -94,7 +111,7 @@ Si una fuente falla (sin conexión, respuesta vacía, planilla con otro formato)
 Comprobar que funciona:
 
 - http://localhost:8000/salud debe responder `{"estado": "ok"}`.
-- http://localhost:8000/ lleva al ingreso. Creá una cuenta en "Creá una", configurá el doble factor con Google Authenticator, Authy o similar (guardá los 10 códigos de recuperación) y vas a ver el panel.
+- http://localhost:8000/ lleva al ingreso. Creá una cuenta en "Creá una", escribí el código de 6 dígitos que llega a tu email (o, sin correo configurado, el que aparece en `podman-compose logs app`) y vas a ver el panel.
 - Con la sesión iniciada, http://localhost:8000/api/series?indicador=PBI_USD_CORR&paises=URY,ARG&desde=2000&hasta=2025 devuelve las series; agregando `&base=2010` las devuelve en índice base 100. Sin sesión responde 401.
 
 Otros comandos útiles:
@@ -126,10 +143,11 @@ Respuesta: `{"indicador": {codigo, nombre, unidad, escala, alcance, frecuencia},
 ## Acceso y seguridad
 
 - Registro con nombre, email y contraseña (mínimo 12 caracteres, guardada con Argon2), o ingreso con Google.
-- Doble factor obligatorio para todos: el primer ingreso muestra un QR para la app de autenticación y entrega 10 códigos de recuperación de un solo uso.
+- Doble factor obligatorio para todos, también para los que entran con Google: después de la contraseña (o de Google) se manda un código de 6 dígitos al email de la cuenta. Vence a los 10 minutos, sirve una sola vez y al pedir otro el anterior deja de valer. En la base solo se guarda su hash. Ver "Correo (código de ingreso)" para configurar el envío.
+- "Reenviar código" manda uno nuevo; hay que esperar 60 segundos entre envíos y se mandan hasta 5 por hora por cuenta.
 - Tras 5 intentos fallidos (contraseña o código) la cuenta queda bloqueada 15 minutos.
 - La sesión dura 12 horas. "Salir" la cierra.
-- Todavía no hay recuperación de contraseña ni verificación de email (necesitan un servidor de correo).
+- Todavía no hay recuperación de contraseña.
 
 ### Ingreso con Google
 

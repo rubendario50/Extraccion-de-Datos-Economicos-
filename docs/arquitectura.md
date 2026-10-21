@@ -15,7 +15,7 @@ Documento de referencia para todos los agentes. Los requisitos del cliente está
 | Contenedores | Podman: `Containerfile` + `compose.yaml`, se levanta con `podman-compose` | Decisión del cliente: no Docker. |
 | Tests | pytest; Playwright (Python) para el navegador | |
 
-Dependencias principales: `fastapi`, `uvicorn[standard]`, `sqlalchemy>=2`, `psycopg[binary]`, `alembic`, `jinja2`, `python-multipart`, `pydantic-settings`, `httpx`, `argon2-cffi`, `pyotp`, `segno` (QR en SVG), `authlib` (Google), `cryptography` (cifrado del secreto TOTP), `itsdangerous`, `pycountry` (nombres de países en español), `openpyxl` (planillas .xlsx del INE).
+Dependencias principales: `fastapi`, `uvicorn[standard]`, `sqlalchemy>=2`, `psycopg[binary]`, `alembic`, `jinja2`, `python-multipart`, `pydantic-settings`, `httpx`, `argon2-cffi`, `authlib` (Google), `itsdangerous`, `pycountry` (nombres de países en español), `openpyxl` (planillas .xlsx del INE).
 
 ## Estructura
 
@@ -100,17 +100,23 @@ Sistema cerrado: todo dato requiere sesión iniciada con doble factor.
 
 - **Registro** con nombre, email y contraseña (mínimo 12 caracteres, hash Argon2).
 - **Google** con OpenID Connect (Authlib). Si `GOOGLE_CLIENT_ID` no está configurado, el botón no se muestra. URI de redirección mientras no haya dominio: `http://localhost:8000/auth/google/callback`.
-- **Doble factor obligatorio (TOTP)** para todos, incluidos los que entran con Google: al primer ingreso se muestra un QR para Google Authenticator / Authy, se confirma con un código y se entregan 10 códigos de recuperación de un solo uso (guardados con hash). El secreto TOTP se guarda cifrado con `APP_ENCRYPTION_KEY` (Fernet).
+- **Doble factor obligatorio por email** para todos, incluidos los que entran con Google (y también al registrarse): con la contraseña (o Google) correcta se abre una sesión pendiente y se manda un código de 6 dígitos al email de la cuenta (`app/auth/correo.py`, `smtplib` con STARTTLS a `SMTP_HOST:SMTP_PORT`, por defecto Gmail con contraseña de aplicación).
+  - El código sale de `secrets` y en la tabla `codigo_email` solo se guarda su HMAC-SHA256 con `SECRET_KEY` (y el id del usuario); se compara en tiempo constante (`hmac.compare_digest`).
+  - Vence a los 10 minutos y sirve una vez. Solo vale el último de cada usuario: al generar uno nuevo los anteriores quedan anulados (`usado_en`).
+  - "Reenviar código" (`POST /2fa/reenviar`): 60 s de espera mientras el último siga vigente y hasta 5 envíos por hora por cuenta. Si al ingresar ya hay uno vigente de hace menos de 60 s, no se manda otro.
+  - Los códigos equivocados suman a `intentos_2fa` (no lo reinicia la contraseña): a los 5, bloqueo de 15 minutos. Sin un código vigente (vencido o usado) no se cuenta el intento.
+  - Sin `SMTP_USER`/`SMTP_PASSWORD` (desarrollo) no se manda nada y el código se escribe en el registro (`WARNING Correo sin configurar: código para ...`). Si el servidor SMTP falla, se registra el error y el usuario ve un mensaje genérico; el código que no llegó queda anulado.
+  - Hasta la v0.2.5 el segundo factor era una app de autenticación (TOTP con QR y códigos de recuperación); la migración 0006 sacó esas columnas y tablas.
 - **Sesiones** en la tabla `sesion` (token aleatorio en cookie HttpOnly, SameSite=Lax, `Secure` configurable con `COOKIE_SECURE`; en la base solo el hash del token). La sesión tiene un estado `mfa_ok`; sin él solo se puede acceder a las pantallas del segundo factor.
 - **CSRF**: token por sesión en todos los formularios POST.
 - **Fuerza bruta**: tras 5 intentos fallidos de contraseña o de código, bloqueo de 15 minutos para esa cuenta.
 - Roles `admin` y `usuario`. El email de `ADMIN_EMAIL` queda como admin al registrarse.
 
-Pendiente para más adelante: verificación de email y recuperación de contraseña (requieren un servidor SMTP), pasarela de pago, contenido público.
+Pendiente para más adelante: recuperación de contraseña, pasarela de pago, contenido público.
 
 ## Web
 
-- `/login`, `/registro`, `/2fa/configurar`, `/2fa/verificar`, `/salir`.
+- `/login`, `/registro`, `/2fa/verificar` (código del email; `POST /2fa/reenviar` pide otro), `/salir`.
 - `/` panel: elegir indicador, fuente (si el indicador tiene más de una; por defecto la primera con datos), uno o varios países y un rango de años; ver gráfica de líneas y tabla. Los años y países disponibles dependen de la fuente elegida.
 - Proyecciones del FMI: el tramo proyectado de cada línea es punteado y una banda con el rótulo "Proyección del FMI" cubre esos años; el tooltip lo aclara y la tabla marca esas filas con «proy.» (texto, no solo color) y una nota. Ver "Proyecciones del FMI".
 - Opción de índice base 100: el usuario elige el año base y todas las series pasan a valer 100 en ese año (en las mensuales y diarias, el promedio de ese año vale 100).
@@ -119,4 +125,4 @@ Pendiente para más adelante: verificación de email y recuperación de contrase
 
 ## Configuración (`.env`)
 
-`DATABASE_URL`, `SECRET_KEY`, `APP_ENCRYPTION_KEY`, `COOKIE_SECURE`, `ADMIN_EMAIL`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `BASE_URL` (por ahora `http://localhost:8000`). `.env.example` documenta cada una; `.env` nunca se commitea.
+`DATABASE_URL`, `SECRET_KEY`, `COOKIE_SECURE`, `ADMIN_EMAIL`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `BASE_URL` (por ahora `http://localhost:8000`), `SMTP_HOST` (`smtp.gmail.com`), `SMTP_PORT` (`587`), `SMTP_USER`, `SMTP_PASSWORD` (contraseña de aplicación de Gmail), `SMTP_FROM` (vacío = `SMTP_USER`). `.env.example` documenta cada una; `.env` nunca se commitea.

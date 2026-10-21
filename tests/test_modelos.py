@@ -75,3 +75,37 @@ def test_migracion_alembic_crea_las_tablas(tmp_path):
     command.downgrade(config, "base")
     assert not TABLAS & set(inspect(engine).get_table_names())
     engine.dispose()
+
+
+def test_migracion_0006_codigo_por_email(tmp_path):
+    """0006 crea `codigo_email` y saca lo del TOTP sin tocar a los usuarios; el downgrade lo vuelve a crear."""
+    from pathlib import Path
+
+    from alembic import command
+    from alembic.config import Config
+    from sqlalchemy import create_engine, text
+
+    url = f"sqlite:///{tmp_path / 'migracion.sqlite'}"
+    config = Config(str(Path(__file__).resolve().parents[1] / "alembic.ini"))
+    config.set_main_option("sqlalchemy.url", url)
+    command.upgrade(config, "0005")
+    engine = create_engine(url)
+    with engine.begin() as c:
+        c.execute(text(
+            "INSERT INTO usuario (email, nombre, totp_secret_cifrado, totp_activo, rol, intentos_fallidos, "
+            "intentos_2fa, creado_en) VALUES ('ana@example.com', 'Ana', 'x', 1, 'usuario', 0, 0, '2026-10-01')"
+        ))
+    command.upgrade(config, "0006")
+    insp = inspect(engine)
+    assert "codigo_email" in insp.get_table_names() and "codigo_recuperacion" not in insp.get_table_names()
+    columnas = {c["name"] for c in insp.get_columns("usuario")}
+    assert not {"totp_secret_cifrado", "totp_activo", "totp_ultimo_paso"} & columnas
+    with engine.connect() as c:
+        assert c.execute(text("SELECT email FROM usuario")).scalars().all() == ["ana@example.com"]
+    command.downgrade(config, "0005")
+    insp = inspect(engine)
+    assert "codigo_recuperacion" in insp.get_table_names() and "codigo_email" not in insp.get_table_names()
+    assert {"totp_secret_cifrado", "totp_activo", "totp_ultimo_paso"} <= {c["name"] for c in insp.get_columns("usuario")}
+    with engine.connect() as c:
+        assert c.execute(text("SELECT email, totp_activo FROM usuario")).all() == [("ana@example.com", 0)]
+    engine.dispose()

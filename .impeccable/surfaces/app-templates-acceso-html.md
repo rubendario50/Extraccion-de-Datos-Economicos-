@@ -2,7 +2,7 @@
 version: 1
 slug: "app-templates-acceso-html"
 primary_target: "app/templates/acceso.html"
-related_targets: ["app/templates/login.html","app/templates/registro.html","app/templates/2fa_configurar.html","app/templates/2fa_verificar.html","app/templates/2fa_codigos.html"]
+related_targets: ["app/templates/login.html","app/templates/registro.html","app/templates/2fa_verificar.html"]
 ---
 
 # Portada (ingreso y registro) y pantallas de doble factor

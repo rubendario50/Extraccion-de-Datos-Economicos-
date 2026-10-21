@@ -56,7 +56,7 @@ def servidor():
         with httpx.Client(transport=transporte_bcu(), base_url="https://bcu.test/servlet") as c:
             cargar_bcu(s, c, espera=0, hasta=date(2026, 10, 18))
         usuario = Usuario(email="navegador@example.com", nombre="Navegador", password_hash=hashear_password(PASSWORD),
-                          totp_activo=True, rol="usuario")
+                          rol="usuario")
         s.add(usuario)
         s.flush()
         token = secrets.token_urlsafe(32)

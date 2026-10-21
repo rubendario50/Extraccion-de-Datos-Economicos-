@@ -14,7 +14,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.auth import cuentas
-from app.auth.dependencias import destino_segundo_factor
+from app.auth.dependencias import RUTA_SEGUNDO_FACTOR
 from app.auth.sesiones import crear_sesion
 from app.config import get_settings
 from app.db import get_db
@@ -94,6 +94,8 @@ async def retorno(request: Request, db: Session = Depends(get_db)):
         usuario = usuario_desde_google(db, token.get("userinfo") or {})
     except cuentas.ErrorCuenta as e:
         return _a_login(str(e))
-    respuesta = RedirectResponse(destino_segundo_factor(usuario), status_code=303)
+    # Google no reemplaza el segundo factor: también se manda el código al email.
+    aviso = cuentas.iniciar_segundo_factor(db, usuario)
+    respuesta = RedirectResponse(RUTA_SEGUNDO_FACTOR + (f"?aviso={aviso}" if aviso else ""), status_code=303)
     crear_sesion(db, usuario, request, respuesta)
     return respuesta

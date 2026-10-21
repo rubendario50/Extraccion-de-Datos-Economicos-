@@ -712,73 +712,11 @@ input::placeholder { color: var(--tinta-3); opacity: 1; }
 .cobertura-fila:nth-child(3) { animation-delay: 530ms; }
 .cobertura-fila:nth-child(n + 4) { animation-delay: 580ms; }
 
-.pasos {
-  margin: 0;
-  padding-left: 1.25rem;
-  display: grid;
-  gap: var(--e-5);
-}
-.pasos > li { padding-left: var(--e-1); color: var(--tinta-2); }
-.pasos > li::marker { font-weight: 600; color: var(--acento-texto); font-variant-numeric: tabular-nums; }
-.pasos > li > p { margin-bottom: var(--e-3); }
-
-.qr-marco {
-  width: 11rem;
-  padding: var(--e-3);
-  background: #ffffff;  /* el QR siempre oscuro sobre blanco, también en modo oscuro */
-  border: 1px solid var(--borde);
-  border-radius: var(--radio-tarjeta);
-}
-.qr-marco svg { display: block; width: 100%; height: auto; }
-.qr-marco .qrline { stroke: #111111; }
-
-.clave-manual { margin-top: var(--e-3); font-size: var(--t-chico); }
-.clave-manual summary {
-  cursor: pointer;
-  color: var(--acento-texto);
-  font-weight: 500;
-  width: fit-content;
-  border-radius: 4px;
-}
-.clave-manual summary:hover { text-decoration: underline; text-underline-offset: 0.2em; }
-.clave-manual[open] summary { margin-bottom: var(--e-2); }
-.clave-manual > p + p { margin-top: var(--e-2); }
-.clave {
-  font-size: var(--t-base);
-  font-weight: 500;
-  letter-spacing: 0.06em;
-  font-variant-numeric: tabular-nums;
-  word-break: break-all;
-  padding: var(--e-2) var(--e-3);
-  color: var(--tinta);
-  background: var(--superficie-2);
-  border: 1px solid var(--borde);
-  border-radius: var(--radio);
-  user-select: all;
-}
-
 .entrada-codigo {
   font-size: 1.25rem !important;
   letter-spacing: 0.12em;
   font-variant-numeric: tabular-nums;
   max-width: 14rem;
-}
-
-.codigos {
-  margin: 0;
-  padding: var(--e-4);
-  list-style: none;
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--e-2) var(--e-5);
-  background: var(--superficie-2);
-  border: 1px solid var(--borde);
-  border-radius: var(--radio-tarjeta);
-  font-size: var(--t-base);
-  font-weight: 500;
-  letter-spacing: 0.04em;
-  font-variant-numeric: tabular-nums;
-  user-select: all;
 }
 
 /* ---------- Panel ---------- */
@@ -1104,7 +1042,7 @@ button.leyenda-item:active { transform: scale(0.97); }
   font-variant-numeric: tabular-nums lining-nums;
 }
 /* Cifras en monoespaciada: las columnas de números se alinean dígito por dígito */
-.tabla td, .tabla tbody th, .tt-valor, .tt-anio, .clave, .codigos, .entrada-codigo { font-family: var(--fuente-cifras); }
+.tabla td, .tabla tbody th, .tt-valor, .tt-anio, .entrada-codigo { font-family: var(--fuente-cifras); }
 .tabla td, .tabla tbody th { font-size: var(--t-meta); }
 .tabla th, .tabla td {
   padding: 0.5rem var(--e-4);
@@ -1235,7 +1173,6 @@ button.leyenda-item:active { transform: scale(0.97); }
 }
 
 @media (max-width: 420px) {
-  .codigos { grid-template-columns: 1fr; }
   .barra-nombre { display: none; }
 }
 
