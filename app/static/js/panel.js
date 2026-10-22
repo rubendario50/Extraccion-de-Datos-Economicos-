@@ -7,6 +7,15 @@
   const datos = JSON.parse(document.getElementById("datos-panel").textContent);
   const porCodigoPais = new Map(datos.paises.map((p) => [p.codigo, p]));
   const porCodigoIndicador = new Map(datos.indicadores.map((i) => [i.codigo, i]));
+  const porCodigoGrupo = new Map((datos.grupos || []).map((g) => [g.codigo, g]));
+
+  // Lo elegido se guarda como una lista de claves: el código del país ("URY") o "g:" + el del grupo
+  // ("g:MERCOSUR"). Los códigos de país nunca llevan ":", así que no se confunden.
+  const PREFIJO_GRUPO = "g:";
+  const esGrupo = (clave) => clave.startsWith(PREFIJO_GRUPO);
+  const grupoDe = (clave) => porCodigoGrupo.get(clave.slice(PREFIJO_GRUPO.length));
+  const nombreDe = (clave) => (esGrupo(clave) ? grupoDe(clave)?.nombre : porCodigoPais.get(clave)?.nombre) || clave;
+  const claveSerie = (s) => (s.grupo ? PREFIJO_GRUPO + s.grupo : s.pais);
 
   const $ = (id) => document.getElementById(id);
   const el = {
@@ -111,7 +120,7 @@
   const estado = {
     indicador: datos.indicadores.length ? datos.indicadores[0].codigo : "",
     fuente: null,
-    paises: [],
+    paises: [], // claves de países y grupos, en el orden en que se eligieron
     desde: null,
     hasta: null,
     usarBase: false,
@@ -144,7 +153,7 @@
     const nacional = esNacional();
     el.selector.hidden = nacional;
     el.serieFija.hidden = !nacional;
-    el.etiquetaPaises.textContent = nacional ? "País" : "Países y regiones";
+    el.etiquetaPaises.textContent = nacional ? "País" : "Países, regiones y grupos";
     el.ayudaPaises.textContent = nacional ? "Los indicadores de Uruguay tienen una sola serie." : `Hasta ${MAX_SERIES} a la vez.`;
     if (nacional) cerrarOpciones();
   }
@@ -189,7 +198,9 @@
     if (porCodigoIndicador.has(q.get("indicador"))) estado.indicador = q.get("indicador");
     if (q.get("fuente")) estado.fuente = q.get("fuente").trim().toUpperCase();
     const paises = (q.get("paises") || "").split(",").filter((c) => porCodigoPais.has(c));
-    estado.paises = (paises.length ? paises : datos.por_defecto.filter((c) => porCodigoPais.has(c))).slice(0, MAX_SERIES);
+    const grupos = (q.get("grupos") || "").split(",").filter((c) => porCodigoGrupo.has(c)).map((c) => PREFIJO_GRUPO + c);
+    const elegidos = [...paises, ...grupos];
+    estado.paises = (elegidos.length ? elegidos : datos.por_defecto.filter((c) => porCodigoPais.has(c))).slice(0, MAX_SERIES);
     estado.paises.forEach(asignarRanura);
     const num = (n) => (q.has(n) && /^\d{4}$/.test(q.get(n)) ? Number(q.get(n)) : null);
     estado.desde = num("desde");
@@ -202,12 +213,19 @@
     const q = new URLSearchParams();
     q.set("indicador", estado.indicador);
     if (estado.fuente) q.set("fuente", estado.fuente);
-    q.set("paises", estado.paises.join(","));
+    q.set("paises", paisesElegidos().join(","));
+    if (gruposElegidos().length) q.set("grupos", gruposElegidos().join(","));
     if (estado.desde != null) q.set("desde", estado.desde);
     if (estado.hasta != null) q.set("hasta", estado.hasta);
     if (estado.usarBase && estado.base != null) q.set("base", estado.base);
     history.replaceState(null, "", "?" + q.toString());
   }
+
+  const paisesElegidos = () => estado.paises.filter((c) => !esGrupo(c));
+  const gruposElegidos = () => estado.paises.filter(esGrupo).map((c) => c.slice(PREFIJO_GRUPO.length));
+
+  // El indicador actual se puede pedir por grupos (los internacionales con regla de agregación).
+  const admiteGrupos = () => Boolean(indicadorActual()?.agregacion);
 
   // ---------- Controles de años ----------
 
@@ -267,38 +285,64 @@
   function pintarFichas() {
     el.fichas.replaceChildren();
     for (const codigo of estado.paises) {
-      const pais = porCodigoPais.get(codigo);
+      const nombre = nombreDe(codigo);
+      const grupo = esGrupo(codigo);
       const li = document.createElement("li");
-      li.className = `ficha serie-${ranuras.get(codigo)}`;
+      li.className = `ficha serie-${ranuras.get(codigo)}${grupo ? " ficha-grupo" : ""}`;
       li.dataset.codigo = codigo;
+      // Los grupos llevan escrito «grupo»: su serie es un agregado calculado, no un dato publicado.
       li.innerHTML =
         `<span class="marca-serie" aria-hidden="true"></span>` +
-        `<span class="ficha-nombre" title="${escapar(pais.nombre)}">${escapar(pais.nombre)}</span>` +
-        `<button type="button" class="ficha-quitar" data-codigo="${escapar(codigo)}" aria-label="Quitar ${escapar(pais.nombre)}">${ICONO_QUITAR}</button>`;
+        `<span class="ficha-nombre" title="${escapar(nombre)}">${escapar(nombre)}</span>` +
+        (grupo ? '<span class="ficha-tipo">grupo</span>' : "") +
+        `<button type="button" class="ficha-quitar" data-codigo="${escapar(codigo)}" aria-label="Quitar ${escapar(nombre)}">${ICONO_QUITAR}</button>`;
       el.fichas.append(li);
     }
-    el.buscar.placeholder = estado.paises.length ? "Agregar…" : "Buscar país o región…";
+    el.buscar.placeholder = estado.paises.length ? "Agregar…" : "Buscar país, región o grupo…";
   }
 
   let activa = -1;
   let resultados = [];
 
+  // 0: empieza con el texto; 1: alguna palabra empieza con el texto; 2: lo contiene o es el código; -1: no coincide.
+  function coincidencia(nombre, codigo, q) {
+    const n = sinTildes(nombre);
+    return n.startsWith(q) ? 0 : n.includes(" " + q) ? 1 : n.includes(q) || sinTildes(codigo) === q ? 2 : -1;
+  }
+
+  // Opciones del buscador: primero los grupos (sección «Grupos»), después países y regiones.
+  // Cada una: { clave, nombre, tipo: "grupo" | "region" | "pais", detalle }.
   function buscarPaises(texto) {
     const fte = fuenteActual();
     const conDatos = new Set(fte ? fte.paises : []);
     const q = sinTildes(texto.trim());
     const elegidos = new Set(estado.paises);
-    const lista = datos.paises.filter((p) => conDatos.has(p.codigo) && !elegidos.has(p.codigo));
-    if (!q) return lista.sort((a, b) => a.agregado - b.agregado || a.nombre.localeCompare(b.nombre, "es"));
-    return lista
-      .map((p) => {
-        const n = sinTildes(p.nombre);
-        const rango = n.startsWith(q) ? 0 : n.includes(" " + q) ? 1 : n.includes(q) || sinTildes(p.codigo) === q ? 2 : -1;
-        return [rango, p];
-      })
-      .filter(([r]) => r >= 0)
-      .sort((a, b) => a[0] - b[0] || a[1].agregado - b[1].agregado || a[1].nombre.localeCompare(b[1].nombre, "es"))
-      .map(([, p]) => p);
+    const filtrar = (lista, codigo) =>
+      !q
+        ? lista
+        : lista
+            .map((x) => [coincidencia(x.nombre, codigo(x), q), x])
+            .filter(([r]) => r >= 0)
+            .sort((a, b) => a[0] - b[0])
+            .map(([, x]) => x);
+
+    // Un grupo se ofrece si el indicador se puede agregar y la fuente tiene datos de algún miembro.
+    const grupos = admiteGrupos()
+      ? (datos.grupos || []).filter((g) => !elegidos.has(PREFIJO_GRUPO + g.codigo) && g.miembros.some((m) => conDatos.has(m)))
+      : [];
+    const opcionesGrupos = filtrar(grupos, (g) => g.codigo).map((g) => ({
+      clave: PREFIJO_GRUPO + g.codigo,
+      nombre: g.nombre,
+      tipo: "grupo",
+      detalle: `${g.miembros.length} países`,
+    }));
+
+    const paises = datos.paises
+      .filter((p) => conDatos.has(p.codigo) && !elegidos.has(p.codigo))
+      .sort((a, b) => a.agregado - b.agregado || a.nombre.localeCompare(b.nombre, "es"));
+    // El orden previo (países antes que regiones, por nombre) se conserva dentro de cada rango: sort es estable.
+    const opcionesPaises = filtrar(paises, (p) => p.codigo).map((p) => ({ clave: p.codigo, nombre: p.nombre, tipo: p.agregado ? "region" : "pais", detalle: p.agregado ? "Región" : "" }));
+    return [...opcionesGrupos, ...opcionesPaises];
   }
 
   function abrirOpciones() {
@@ -308,15 +352,25 @@
     if (estado.paises.length >= MAX_SERIES) {
       el.opciones.innerHTML = `<li class="opcion-vacia" role="presentation">Ya elegiste ${MAX_SERIES}. Quitá uno para agregar otro.</li>`;
     } else if (!resultados.length) {
-      el.opciones.innerHTML = '<li class="opcion-vacia" role="presentation">No hay países con datos que coincidan.</li>';
+      el.opciones.innerHTML = '<li class="opcion-vacia" role="presentation">No hay países ni grupos con datos que coincidan.</li>';
     }
-    resultados.forEach((p, i) => {
+    const hayGrupos = resultados.some((o) => o.tipo === "grupo");
+    resultados.forEach((o, i) => {
+      // Títulos de sección: solo si hay grupos (si no, la lista es la de siempre).
+      const anterior = resultados[i - 1];
+      if (hayGrupos && (!anterior || (anterior.tipo === "grupo") !== (o.tipo === "grupo"))) {
+        const titulo = document.createElement("li");
+        titulo.className = "opcion-seccion";
+        titulo.setAttribute("role", "presentation");
+        titulo.textContent = o.tipo === "grupo" ? "Grupos" : "Países y regiones";
+        el.opciones.append(titulo);
+      }
       const li = document.createElement("li");
       li.className = "opcion";
       li.id = `opcion-${i}`;
       li.setAttribute("role", "option");
-      li.dataset.codigo = p.codigo;
-      li.innerHTML = `<span>${escapar(p.nombre)}</span>${p.agregado ? '<span class="opcion-tipo">Región</span>' : ""}`;
+      li.dataset.codigo = o.clave;
+      li.innerHTML = `<span>${escapar(o.nombre)}</span>${o.detalle ? `<span class="opcion-tipo">${escapar(o.detalle)}</span>` : ""}`;
       el.opciones.append(li);
     });
     el.opciones.hidden = false;
@@ -382,7 +436,7 @@
       marcarActiva();
     } else if (e.key === "Enter") {
       e.preventDefault();
-      if (activa >= 0 && resultados[activa]) agregarPais(resultados[activa].codigo);
+      if (activa >= 0 && resultados[activa]) agregarPais(resultados[activa].clave);
     } else if (e.key === "Escape") {
       cerrarOpciones();
     } else if (e.key === "Backspace" && !el.buscar.value && estado.paises.length) {
@@ -479,7 +533,7 @@
       grafica && grafica.clear();
       ultimaRespuesta = null;
       el.unidad.textContent = "";
-      mostrarEstado("vacio", "Elegí al menos un país", "Usá el buscador de «Países y regiones» para agregar los que quieras comparar.");
+      mostrarEstado("vacio", "Elegí al menos un país", "Usá el buscador de «Países, regiones y grupos» para agregar los que quieras comparar.");
       vaciarTabla("Sin países elegidos.");
       return;
     }
@@ -493,7 +547,16 @@
     pedidoEnCurso = control;
     // Los indicadores nacionales son siempre de Uruguay: no llevan países.
     const q = new URLSearchParams({ indicador: estado.indicador });
-    if (!esNacional()) q.set("paises", estado.paises.join(","));
+    if (!esNacional()) {
+      if (paisesElegidos().length) q.set("paises", paisesElegidos().join(","));
+      // Si el indicador no se puede agregar, los grupos elegidos quedan en las fichas pero no se piden.
+      if (gruposElegidos().length && admiteGrupos()) q.set("grupos", gruposElegidos().join(","));
+      if (!q.has("paises") && !q.has("grupos")) {
+        mostrarEstado("vacio", "Este indicador no se puede ver por grupos", "Agregá algún país para compararlo.");
+        vaciarTabla("Sin países elegidos.");
+        return;
+      }
+    }
     if (estado.fuente) q.set("fuente", estado.fuente);
     if (estado.desde != null) q.set("desde", estado.desde);
     if (estado.hasta != null) q.set("hasta", estado.hasta);
@@ -609,16 +672,46 @@
 
   const tieneDatos = (s) => s.datos.some((d) => d.valor != null);
 
-  // Por qué una serie vino vacía: la fuente no publica ese país, o no hay datos en los años elegidos.
-  // null si tiene datos.
+  // Por qué una serie vino vacía: la fuente no publica ese país, o no hay datos en los años elegidos; en un
+  // grupo, también que ningún año tenga el dato de todos sus miembros. null si tiene datos.
   function motivoVacia(s, cuerpo) {
     if (tieneDatos(s)) return null;
+    if (s.grupo) return !s.agregado.miembros.length ? "fuente" : s.datos.length ? "incompleto" : "rango";
     const ind = porCodigoIndicador.get(cuerpo.indicador.codigo);
     const fte = ind && ind.fuentes.find((f) => f.codigo === cuerpo.fuente);
     return fte && !fte.paises.includes(s.pais) ? "fuente" : "rango";
   }
 
-  const TEXTO_VACIA = { fuente: "sin datos en esta fuente", rango: "sin datos en este rango" };
+  const TEXTO_VACIA = {
+    fuente: "sin datos en esta fuente",
+    rango: "sin datos en este rango",
+    incompleto: "ningún año con todos sus miembros",
+  };
+
+  // ---------- Grupos (agregados calculados) ----------
+
+  // "Argentina, Brasil y Uruguay".
+  function enumerar(nombres) {
+    return nombres.length < 2 ? nombres.join("") : `${nombres.slice(0, -1).join(", ")} y ${nombres[nombres.length - 1]}`;
+  }
+
+  // Cómo se calculó, en corto (tooltip y encabezado de la tabla): "suma de 5 países".
+  function resumenAgregado(s) {
+    const n = s.agregado.miembros.length;
+    const paises = `${n} ${n === 1 ? "país" : "países"}`;
+    return s.agregado.metodo === "suma" ? `suma de ${paises}` : `promedio ponderado por PBI de ${paises}`;
+  }
+
+  // Por qué un año de un grupo quedó sin valor: "falta el dato de Bolivia; falta el PBI de Paraguay".
+  // Vacío si el año tiene valor.
+  function faltantesDe(s, dato) {
+    const nombres = new Map(s.agregado.miembros.map((m) => [m.pais, m.nombre]));
+    const quienes = (lista) => enumerar((lista || []).map((c) => nombres.get(c) || c));
+    return [
+      dato?.faltan ? `falta el dato de ${quienes(dato.faltan)}` : "",
+      dato?.faltan_pbi ? `falta el PBI de ${quienes(dato.faltan_pbi)}` : "",
+    ].filter(Boolean).join("; ");
+  }
 
   // ---------- Proyecciones (FMI) ----------
 
@@ -639,15 +732,22 @@
 
     const conDatos = series.filter(tieneDatos);
     // La ficha de una serie vacía lleva la misma marca que la leyenda (hueca y gris).
-    const vaciasCodigos = new Set(series.filter((s) => !tieneDatos(s)).map((s) => s.pais));
+    const vaciasCodigos = new Set(series.filter((s) => !tieneDatos(s)).map(claveSerie));
     el.fichas.querySelectorAll(".ficha").forEach((f) => f.classList.toggle("ficha-vacia", vaciasCodigos.has(f.dataset.codigo)));
     const vacias = (motivo) => series.filter((s) => motivoVacia(s, cuerpo) === motivo).map((s) => s.nombre);
     const sinFuente = vacias("fuente");
     const sinRango = vacias("rango");
-    if (conDatos.length && (sinFuente.length || sinRango.length)) {
+    const incompletos = vacias("incompleto");
+    // Miembros de un grupo que la fuente no publica: el agregado se calcula sin ellos y se avisa.
+    const fueraDeGrupos = series
+      .filter((s) => s.grupo && s.agregado.miembros.length && s.agregado.fuera.length)
+      .map((s) => `${s.nombre} no incluye a ${enumerar(s.agregado.fuera.map((m) => m.nombre))} (sin datos en esta fuente).`);
+    if (conDatos.length && (sinFuente.length || sinRango.length || incompletos.length || fueraDeGrupos.length)) {
       el.faltantes.textContent = [
         sinFuente.length ? `${nombreCorto(cuerpo.fuente)} no publica datos de ${sinFuente.join(", ")}.` : "",
         sinRango.length ? `Sin datos en este rango: ${sinRango.join(", ")}.` : "",
+        incompletos.length ? `Ningún año de este rango tiene el dato de todos los miembros de ${incompletos.join(", ")}.` : "",
+        ...fueraDeGrupos,
       ].filter(Boolean).join(" ");
       el.faltantes.hidden = false;
     }
@@ -694,7 +794,7 @@
     // Uruguay es una sola serie fija: ni etiqueta al final de la línea ni leyenda (ya la nombra el control).
     const nacional = esNacional();
     const etiquetas = pocas && !angosto && !nacional;
-    const slot = (s) => ranuras.get(s.pais) || 1;
+    const slot = (s) => ranuras.get(claveSerie(s)) || 1;
     const quieto = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     // Series mensuales y diarias: eje de tiempo con pares [fecha, valor]; las anuales siguen con años.
     const frecuencia = cuerpo.indicador.frecuencia;
@@ -837,7 +937,7 @@
         // Con proyección, más aire arriba para el rótulo de la banda.
         grid: { left: 4, right: etiquetas ? 112 : 12, top: conProyeccion ? 32 : 16, bottom: 64, containLabel: true },
         // La leyenda va en HTML (arriba de la gráfica) para que nunca tape el eje en pantallas angostas.
-        legend: { show: false, selected: Object.fromEntries(cuerpo.series.map((s) => [s.nombre, !ocultas.has(s.pais)])) },
+        legend: { show: false, selected: Object.fromEntries(cuerpo.series.map((s) => [s.nombre, !ocultas.has(claveSerie(s))])) },
         tooltip: {
           trigger: "axis",
           className: "tooltip-grafica",
@@ -860,9 +960,17 @@
             const filas = [...valores]
               .map(([o, valor]) => {
                 const s = cuerpo.series[o];
+                // Los grupos dicen cómo se calcularon y, si el año quedó vacío, qué miembro falta.
+                let nota = "";
+                if (s.grupo) {
+                  const dato = s.datos.find((d) => String(d.anio) === String(params[0].axisValue));
+                  nota = (valor == null && faltantesDe(s, dato)) || resumenAgregado(s);
+                }
                 return (
                   `<div class="tt-fila"><span class="marca-serie serie-${slot(s)}"></span>` +
-                  `<span class="tt-nombre">${escapar(s.nombre)}</span><span class="tt-valor">${formatear(valor)}</span></div>`
+                  `<span class="tt-nombre">${escapar(s.nombre)}` +
+                  (nota ? `<span class="tt-nota">${escapar(nota)}</span>` : "") +
+                  `</span><span class="tt-valor">${formatear(valor)}</span></div>`
                 );
               })
               .join("");
@@ -963,8 +1071,8 @@
         continue;
       }
       li.innerHTML =
-        `<button type="button" class="leyenda-item serie-${ranuras.get(s.pais) || 1}" data-codigo="${escapar(s.pais)}" ` +
-        `data-nombre="${escapar(s.nombre)}" aria-pressed="${!ocultas.has(s.pais)}">` +
+        `<button type="button" class="leyenda-item serie-${ranuras.get(claveSerie(s)) || 1}" data-codigo="${escapar(claveSerie(s))}" ` +
+        `data-nombre="${escapar(s.nombre)}" aria-pressed="${!ocultas.has(claveSerie(s))}">` +
         `<span class="leyenda-linea" aria-hidden="true"></span><span>${escapar(s.nombre)}</span></button>`;
       el.leyenda.append(li);
     }
@@ -998,24 +1106,33 @@
     const cabeza = [`<tr><th scope="col">${primera}</th>`];
     for (const s of cuerpo.series) {
       const motivo = motivoVacia(s, cuerpo);
+      // Los grupos dicen debajo del nombre que son un agregado y cómo se calculó.
+      const nota = motivo ? TEXTO_VACIA[motivo] : s.grupo ? `agregado: ${resumenAgregado(s)}` : "";
       cabeza.push(
-        `<th scope="col"><span class="encabezado-serie serie-${ranuras.get(s.pais) || 1}${motivo ? " encabezado-vacio" : ""}">` +
+        `<th scope="col"><span class="encabezado-serie serie-${ranuras.get(claveSerie(s)) || 1}${motivo ? " encabezado-vacio" : ""}">` +
           `<span class="marca-serie" aria-hidden="true"></span><span>${escapar(s.nombre)}` +
-          (motivo ? `<span class="encabezado-nota">${TEXTO_VACIA[motivo]}</span>` : "") +
+          (nota ? `<span class="encabezado-nota">${escapar(nota)}</span>` : "") +
           `</span></span></th>`
       );
     }
     cabeza.push("</tr>");
     thead.innerHTML = cabeza.join("");
 
-    const mapas = cuerpo.series.map((s) => new Map(s.datos.map((d) => [clave(d), d.valor])));
+    const mapas = cuerpo.series.map((s) => new Map(s.datos.map((d) => [clave(d), d])));
     // Años proyectados (FMI): fondo de la banda de la gráfica y «proy.» escrito junto al año, no solo color.
     const proyectados = periodosProyectados(cuerpo);
     const primerProyectado = anios.find((a) => proyectados.has(a));
     const fila = (a) => {
-      const celdas = mapas.map((m) => {
-        const v = m.get(a);
-        return v == null ? '<td class="sin-dato">—</td>' : `<td>${formatear(v)}</td>`;
+      const celdas = mapas.map((m, i) => {
+        const d = m.get(a);
+        if (d?.valor != null) return `<td>${formatear(d.valor)}</td>`;
+        // Año de un grupo sin valor porque falta algún miembro: se dice cuál.
+        if (d?.faltan || d?.faltan_pbi) {
+          const motivo = faltantesDe(cuerpo.series[i], d);
+          const falta = motivo[0].toUpperCase() + motivo.slice(1);
+          return `<td class="sin-dato" title="${escapar(falta)}">—<span class="oculto-visual"> (${escapar(falta)})</span></td>`;
+        }
+        return '<td class="sin-dato">—</td>';
       });
       const periodo = escapar(textoPeriodo(a, frecuencia));
       if (!proyectados.has(a)) return `<tr><th scope="row">${periodo}</th>${celdas.join("")}</tr>`;
@@ -1046,7 +1163,29 @@
     medirCabeza();
     el.notaTabla.textContent =
       textoUnidad(cuerpo.indicador) + (cuerpo.base != null ? ` (${cuerpo.base} = 100)` : "") + ". «—»: sin dato." +
-      (primerProyectado !== undefined ? ` «proy.»: ${textoProyeccion(cuerpo, true)}, desde ${primerProyectado}.` : "");
+      (primerProyectado !== undefined ? ` «proy.»: ${textoProyeccion(cuerpo, true)}, desde ${primerProyectado}.` : "") +
+      notaGrupos(cuerpo);
+  }
+
+  // Cómo se calculó cada grupo, para la nota de la tabla.
+  function notaGrupos(cuerpo) {
+    const grupos = cuerpo.series.filter((s) => s.grupo && s.agregado.miembros.length);
+    if (!grupos.length) return "";
+    const cada = grupos.map((s) => {
+      const miembros = s.agregado.miembros;
+      // Con muchos miembros (OCDE, América Latina) la lista no entra: se dicen cuántos.
+      const quienes = miembros.length <= 10 ? enumerar(miembros.map((m) => m.nombre)) : `sus ${miembros.length} miembros con datos`;
+      const como = s.agregado.metodo === "suma" ? "suma de" : "promedio ponderado por el PBI en dólares corrientes de";
+      const fuera = s.agregado.fuera.length
+        ? ` No incluye a ${enumerar(s.agregado.fuera.map((m) => m.nombre))} (sin datos en esta fuente).`
+        : "";
+      return ` ${s.nombre}: ${como} ${quienes}.${fuera}`;
+    });
+    const fuente = nombreCorto(cuerpo.fuente);
+    return (
+      ` Grupos: se calculan con los datos de sus miembros en ${fuente[0].toLowerCase()}${fuente.slice(1)};` +
+      " un año queda sin valor si falta el dato de algún miembro." + cada.join("")
+    );
   }
 
   // La fila del año queda fija justo debajo del encabezado, que puede ocupar una o varias líneas.

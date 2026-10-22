@@ -11,13 +11,15 @@ Plataforma de recopilación, análisis y difusión de datos económicos internac
 
 ## Estado
 
-Versión actual: 0.2.6 (ver `CHANGELOG.md`).
+Versión actual: 0.3.0 (ver `CHANGELOG.md`).
 
 Desde la 0.1: base de datos PostgreSQL en Podman, tabla maestra de países (`data/seed/paises.csv`), carga del PBI del FMI DataMapper (PBI en dólares corrientes y crecimiento real) y una web con login (contraseña o Google, doble factor obligatorio) donde se eligen indicador, países y años y se ven la gráfica y la tabla, con opción de índice base 100. La arquitectura está en `docs/arquitectura.md`.
 
 Desde la 0.2: más indicadores internacionales anuales del FMI (deuda bruta y resultado fiscal del gobierno general, población) y del Banco Mundial (PBI, crecimiento, población, exportaciones, importaciones y deuda del gobierno central). Cuando un mismo dato viene de las dos fuentes se guardan ambas cifras por separado, y el panel y la API dejan elegir la fuente.
 
 Desde la 0.2.2, primeros datos de Uruguay: IPC mensual (INE, desde 1937), tasa de desempleo mensual (INE, Encuesta Continua de Hogares, desde 2006) y dólar interbancario billete diario (BCU, cierre del día, desde 2000). En el panel aparecen en el grupo "Uruguay" del selector de indicadores, con una sola serie y eje de fechas.
+
+Desde la 0.3, grupos de países: Mercosur, G7, BRICS, Unión Europea (27), América Latina y el Caribe (CEPAL) y OCDE. En el panel se agregan junto a los países (sección "Grupos" del buscador) y se ven como una serie más, calculada con los datos de sus miembros en la fuente elegida (ver "Grupos de países").
 
 ## Levantar el proyecto con Podman
 
@@ -89,7 +91,7 @@ Al arrancar, el contenedor `app` aplica las migraciones de Alembic. Después hay
 podman-compose exec app python -m app.etl todo                      # semillas + FMI + Banco Mundial + INE + BCU
 
 # o por partes:
-podman-compose exec app python -m app.etl semillas
+podman-compose exec app python -m app.etl semillas                  # países, fuentes, indicadores y grupos de países
 podman-compose exec app python -m app.etl fmi                       # todos los indicadores del FMI
 podman-compose exec app python -m app.etl fmi --indicadores NGDPD   # solo algunos
 podman-compose exec app python -m app.etl bm                        # todos los indicadores del Banco Mundial
@@ -112,7 +114,7 @@ Comprobar que funciona:
 
 - http://localhost:8000/salud debe responder `{"estado": "ok"}`.
 - http://localhost:8000/ lleva al ingreso. Creá una cuenta en "Creá una", escribí el código de 6 dígitos que llega a tu email (o, sin correo configurado, el que aparece en `podman-compose logs app`) y vas a ver el panel.
-- Con la sesión iniciada, http://localhost:8000/api/series?indicador=PBI_USD_CORR&paises=URY,ARG&desde=2000&hasta=2025 devuelve las series; agregando `&base=2010` las devuelve en índice base 100. Sin sesión responde 401.
+- Con la sesión iniciada, http://localhost:8000/api/series?indicador=PBI_USD_CORR&paises=URY,ARG&desde=2000&hasta=2025 devuelve las series; agregando `&base=2010` las devuelve en índice base 100, y con `&grupos=MERCOSUR` suma la serie del Mercosur. Sin sesión responde 401.
 
 Otros comandos útiles:
 
@@ -131,14 +133,40 @@ Toda la API exige una sesión iniciada con el doble factor completo (la cookie d
 | Parámetro | Obligatorio | Descripción |
 |---|---|---|
 | `indicador` | sí | Código interno. Internacionales: `PBI_USD_CORR`, `PBI_CRECIMIENTO`, `POBLACION`, `DEUDA_GOB_GENERAL`, `RESULTADO_FISCAL`, `EXPORTACIONES_USD`, `IMPORTACIONES_USD`, `DEUDA_GOB_CENTRAL`. De Uruguay: `IPC_UY`, `DESEMPLEO_UY` (mensuales), `DOLAR_INTERBANCARIO` (diaria). |
-| `paises` | en los internacionales | Códigos ISO3 o del FMI DataMapper separados por coma (`URY,ARG,WEOWORLD`). No distingue mayúsculas; los repetidos se ignoran. Hasta 8. En los indicadores de Uruguay se omite (o solo `URY`). |
+| `paises` | en los internacionales (o `grupos`) | Códigos ISO3 o del FMI DataMapper separados por coma (`URY,ARG,WEOWORLD`). No distingue mayúsculas; los repetidos se ignoran. Hasta 8 entre países y grupos. En los indicadores de Uruguay se omite (o solo `URY`). |
+| `grupos` | no | Códigos de grupos de países separados por coma: `MERCOSUR`, `G7`, `BRICS`, `UE27`, `ALC`, `OCDE`. Cada grupo vuelve como una serie agregada (ver "Grupos de países"). Solo en los indicadores internacionales. |
 | `desde`, `hasta` | no | Primer y último año (inclusive), también en las series mensuales y diarias. |
 | `base` | no | Año base: las series se expresan en índice base 100. En las mensuales y diarias vale 100 el promedio del año base. |
 | `fuente` | no | `FMI_DM`, `BM`, `INE` o `BCU`. Por defecto, la primera fuente con datos para ese indicador (el FMI antes que el Banco Mundial). |
 
 Las fuentes nunca se mezclan: todas las series de una respuesta salen de la misma fuente, aunque el indicador tenga datos de las dos. Las cifras de ambas están en la misma unidad y escala (por ejemplo, el PBI en miles de millones de dólares y la población en millones).
 
-Respuesta: `{"indicador": {codigo, nombre, unidad, escala, alcance, frecuencia}, "fuente", "fuente_nombre", "fuentes", "base", "proyeccion_desde", "series": [{"pais", "codigo", "nombre", "fuente", "datos": [{"anio", "valor"}]}]}`, donde `fuentes` lista las fuentes que publican el indicador. Con la fuente `FMI_DM`, `proyeccion_desde` es el primer año que el FMI publica como proyección y cada dato trae además `"proyeccion": true` o `false`; con las demás fuentes (que no publican proyecciones), `proyeccion_desde` es `null` y los datos no llevan la marca. Cómo se decide el año: `docs/arquitectura.md`, "Proyecciones del FMI". En las series mensuales y diarias cada dato trae `fecha` (ISO, `"2024-03-01"`; en las mensuales, el primer día del mes) en lugar de `anio`, y hay una sola serie, `"pais": "URY"`. Ejemplo: `/api/series?indicador=DOLAR_INTERBANCARIO&desde=2024`. Errores: 404 (indicador, fuente o país desconocido, o fuente que no publica ese indicador), 400 (más de 8 países, u otro país en un indicador de Uruguay), 422 (parámetros inválidos o año base sin dato), con el motivo en `detail`.
+Respuesta: `{"indicador": {codigo, nombre, unidad, escala, alcance, frecuencia}, "fuente", "fuente_nombre", "fuentes", "base", "proyeccion_desde", "series": [{"pais", "codigo", "nombre", "fuente", "datos": [{"anio", "valor"}]}]}`, donde `fuentes` lista las fuentes que publican el indicador. Con la fuente `FMI_DM`, `proyeccion_desde` es el primer año que el FMI publica como proyección y cada dato trae además `"proyeccion": true` o `false`; con las demás fuentes (que no publican proyecciones), `proyeccion_desde` es `null` y los datos no llevan la marca. Cómo se decide el año: `docs/arquitectura.md`, "Proyecciones del FMI". En las series mensuales y diarias cada dato trae `fecha` (ISO, `"2024-03-01"`; en las mensuales, el primer día del mes) en lugar de `anio`, y hay una sola serie, `"pais": "URY"`. Ejemplo: `/api/series?indicador=DOLAR_INTERBANCARIO&desde=2024`. Las series de grupos vienen después de las de países, con `"pais": null`, `"grupo"` (el código) y `"agregado": {"metodo", "descripcion", "miembros", "fuera"}`: `metodo` es `suma` o `promedio_ponderado_pbi`, `miembros` los países que entraron (`[{"pais", "nombre"}]`) y `fuera` los que la fuente no publica. Un año sin valor lleva `"faltan"` (miembros sin el dato ese año) o `"faltan_pbi"` (miembros sin el PBI para ponderar). Ejemplo: `/api/series?indicador=DEUDA_GOB_GENERAL&grupos=MERCOSUR,G7&base=2010`.
+
+Errores: 404 (indicador, fuente, país o grupo desconocido, o fuente que no publica ese indicador), 400 (más de 8 países y grupos, otro país o un grupo en un indicador de Uruguay), 422 (parámetros inválidos o año base sin dato; en un grupo dice qué miembro falta), con el motivo en `detail`.
+
+## Grupos de países
+
+Los grupos son agregados calculados por la plataforma con los datos de sus miembros, distintos de las regiones que publican el FMI o el Banco Mundial (que se eligen como un país más). Se definen en `data/seed/grupos.csv` (código, nombre y una descripción de la composición) y `data/seed/grupos_paises.csv` (un país por fila, con su código interno de `paises.csv`; la columna `iso3` se controla al cargar para evitar errores de tipeo). Se cargan con `python -m app.etl semillas`; sacar una fila saca al país del grupo.
+
+| Código | Grupo | Miembros |
+|---|---|---|
+| `MERCOSUR` | Mercosur | Argentina, Brasil, Paraguay, Uruguay y Bolivia (miembro pleno desde julio de 2024). Venezuela, suspendida desde 2016, no entra. |
+| `G7` | G7 | Alemania, Canadá, Estados Unidos, Francia, Italia, Japón y Reino Unido. |
+| `BRICS` | BRICS | Brasil, Rusia, India, China y Sudáfrica; Egipto, Etiopía, Irán y Emiratos Árabes Unidos (2024); Indonesia (2025). Arabia Saudita (invitada, sin confirmar) y los países socios no entran. |
+| `UE27` | Unión Europea (27) | Los 27 estados miembros desde la salida del Reino Unido (2020). |
+| `ALC` | América Latina y el Caribe (CEPAL) | Los 33 países de la región miembros de la CEPAL. |
+| `OCDE` | OCDE | Los 38 miembros (desde Costa Rica, 2021). |
+
+Cómo se calcula (`app/analisis/agrupamientos.py`, donde está la regla de cada indicador en `REGLAS`):
+
+- PBI en dólares, población, exportaciones e importaciones: **suma** de los miembros.
+- Deuda, resultado fiscal y crecimiento (porcentajes del PBI y tasas): **promedio ponderado por el PBI en dólares corrientes** de cada miembro, de la misma fuente y el mismo año.
+- Un año tiene valor **solo si están todos los miembros** (y, en los promedios, también su PBI). No se completa con estimaciones ni se mezclan fuentes.
+- Los miembros de los que la fuente no publica ningún dato del indicador quedan fuera y se avisa (por ejemplo, el FMI no publica a Cuba).
+- La composición es la actual y se aplica a todos los años.
+
+En el panel, la ficha del grupo dice «grupo»; el encabezado de la tabla y el tooltip dicen cómo se calculó; la nota de la tabla lista los miembros, y un año vacío explica qué miembro falta.
 
 ## Acceso y seguridad
 
@@ -190,6 +218,8 @@ py -m venv .venv
 Agregar una fila en `data/seed/indicadores.csv` con el código interno, sus datos, la fuente (`FMI_DM` o `BM`) y el código en esa fuente (por ejemplo `LP` en el FMI o `SP.POP.TOTL` en el Banco Mundial), y volver a correr `python -m app.etl semillas` y `python -m app.etl fmi` o `bm`.
 
 En el BCU el código es el de la moneda en su servicio de cotizaciones (por ejemplo `2230`, promedio del dólar fondo; la lista sale de `awsbcumonedas`), y alcanza con la fila del CSV. En el INE cada planilla tiene su propio formato: además de la fila hay que agregar en `app/etl/ine.py` la ruta del archivo y una función que lo lea (`ARCHIVOS`).
+
+Si el indicador es internacional y anual, agregar también en `REGLAS` (`app/analisis/agrupamientos.py`) cómo se agrega por grupos (suma o promedio ponderado por el PBI); un test avisa si falta.
 
 Si es el mismo dato en las dos fuentes, se repite el código interno en dos filas, una por fuente; el nombre, la unidad y la escala salen de la primera. Si una fuente lo publica en otra escala, la columna `factor` convierte su valor a la del indicador: por ejemplo `1e-9` para pasar los dólares del Banco Mundial a miles de millones, o `1e-6` para pasar personas a millones.
 

@@ -15,6 +15,36 @@ y el proyecto usa [versionado semántico](https://semver.org/lang/es/).
   fuente.
 - Decidir qué hacer con el error de origen del BCU del 27/04/2000 (venta
   1,905).
+- Confirmar con Rubén la composición de los grupos (Mercosur con Bolivia, BRICS
+  sin Arabia Saudita, OCDE 38) y la regla de cobertura completa, que deja años
+  vacíos (por ejemplo América Latina sin Cuba en el Banco Mundial desde 2021).
+
+## [0.3.0] - 2026-10-22
+
+Grupos de países: Mercosur, G7, BRICS, Unión Europea, América Latina y el Caribe y OCDE.
+
+### Agregado
+
+- **Grupos de países**: Mercosur (con Bolivia, miembro pleno desde 2024), G7, BRICS (los cinco
+  miembros hasta 2023 más Egipto, Etiopía, Irán, Emiratos Árabes Unidos e Indonesia), Unión Europea
+  (27), América Latina y el Caribe (los 33 países de la CEPAL) y OCDE (38). Se definen en
+  `data/seed/grupos.csv` y `grupos_paises.csv`, con los códigos internos de país.
+- En el panel, el buscador de países tiene una sección «Grupos»: cada grupo se ve como una serie más,
+  también en índice base 100. La tabla y el tooltip dicen que es un agregado y cómo se calculó, y qué
+  miembro falta en los años sin valor.
+- La API (`/api/series`) acepta `grupos=MERCOSUR,G7` y devuelve la serie agregada con los miembros que
+  entraron.
+- Cálculo: suma en los indicadores en niveles (PBI, población, exportaciones, importaciones) y promedio
+  ponderado por el PBI en dólares de la misma fuente en los porcentajes del PBI y tasas (deuda,
+  resultado fiscal, crecimiento). Un año tiene valor solo si están todos los miembros; los que la
+  fuente no publica (Cuba en el FMI) quedan fuera y se avisa. Las fuentes no se mezclan.
+
+### Para actualizar
+
+- Reconstruir y recrear el contenedor (`podman-compose up -d --build --force-recreate`; sin
+  `--force-recreate`, podman-compose 1.6 no siempre lo recrea) para aplicar la migración 0007 (tablas
+  `grupo` y `grupo_pais`) y después volver a cargar las semillas (`podman-compose exec app python -m app.etl semillas`)
+  para crear los grupos. No hace falta volver a bajar los datos.
 
 ## [0.2.6] - 2026-10-20
 

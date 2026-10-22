@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.analisis.agrupamientos import DESCRIPCIONES, INDICADOR_PESO, PROMEDIO_PONDERADO_PBI, REGLAS, agregar
 from app.analisis.indices import ErrorIndice, a_base_100, a_base_100_promedio
 from app.auth.dependencias import usuario_actual
 from app.db import get_db
@@ -15,6 +16,7 @@ from app.models import (
     DatoNacionalAnual,
     DatoNacionalMensual,
     Fuente,
+    Grupo,
     Indicador,
     IndicadorSerieExterna,
     Pais,
@@ -24,7 +26,7 @@ from app.models import (
 # Toda la API exige sesión con el doble factor completo.
 router = APIRouter(prefix="/api", dependencies=[Depends(usuario_actual)])
 
-# Máximo de países por pedido; es lo mismo que permite elegir el panel.
+# Máximo de series (países más grupos) por pedido; es lo mismo que permite elegir el panel.
 MAX_PAISES = 8
 
 # (alcance, frecuencia) -> (tabla, columna del período, columna del valor). Las series anuales usan
@@ -98,7 +100,12 @@ def obtener_series(
     paises: str | None = Query(
         None,
         description="Códigos ISO3 o del FMI DataMapper separados por coma: URY,ARG,WEOWORLD. "
-        "Obligatorio en los indicadores internacionales; los nacionales son siempre de Uruguay",
+        "En los indicadores internacionales hace falta al menos un país o un grupo; los nacionales son siempre de Uruguay",
+    ),
+    grupos: str | None = Query(
+        None,
+        description="Códigos de grupos de países separados por coma: MERCOSUR,G7. Cada grupo vuelve como una "
+        "serie agregada de sus miembros (suma o promedio ponderado por el PBI, según el indicador)",
     ),
     desde: int | None = Query(None, description="Primer año (inclusive)"),
     hasta: int | None = Query(None, description="Último año (inclusive)"),
@@ -132,64 +139,177 @@ def obtener_series(
         raise HTTPException(422, "`desde` no puede ser mayor que `hasta`.")
 
     if ind.alcance == "nacional":
+        if (grupos or "").strip():
+            raise HTTPException(400, f"{ind.codigo} es un indicador de Uruguay: no se puede pedir por grupos.")
         serie = serie_nacional(db, ind, fte, paises, desde, hasta, base)
         return respuesta(ind, fte, fuentes, base, [serie], None)
     proyeccion = primer_anio_proyectado(db, ind.id, fte)
 
-    # Los códigos no distinguen mayúsculas (ury = URY) y los repetidos se quitan, conservando el orden.
-    escritos: dict[str, str] = {}  # código en mayúsculas -> como lo escribió quien pidió
-    for c in (paises or "").split(","):
-        if c.strip():
-            escritos.setdefault(c.strip().upper(), c.strip())
+    escritos = codigos_pedidos(paises)
     pedidos = list(escritos)
-    if not pedidos:
-        raise HTTPException(422, "Indicá al menos un país.")
-    if len(pedidos) > MAX_PAISES:
-        raise HTTPException(400, f"Se pueden pedir hasta {MAX_PAISES} países a la vez (pediste {len(pedidos)}).")
+    escritos_grupos = codigos_pedidos(grupos)
+    pedidos_grupos = list(escritos_grupos)
+    if not pedidos and not pedidos_grupos:
+        raise HTTPException(422, "Indicá al menos un país o un grupo.")
+    total = len(pedidos) + len(pedidos_grupos)
+    if total > MAX_PAISES:
+        raise HTTPException(400, f"Se pueden pedir hasta {MAX_PAISES} países y grupos a la vez (pediste {total}).")
     # Algunos códigos del FMI tienen minúsculas (FAD_EuroArea): se compara en mayúsculas y se
     # responde con el código tal como está guardado (el del FMI DataMapper si hay dos).
     por_codigo: dict[str, tuple[str, Pais]] = {}
-    for organismo, codigo, pais in db.execute(
-        select(PaisCodigoExterno.organismo, PaisCodigoExterno.codigo, Pais)
-        .join(Pais)
-        .where(PaisCodigoExterno.organismo.in_(["ISO3", "FMI_DM"]))
-        .where(func.upper(PaisCodigoExterno.codigo).in_(pedidos))
-        .order_by(PaisCodigoExterno.organismo)  # FMI_DM antes que ISO3
-    ).all():
-        por_codigo.setdefault(codigo.upper(), (codigo, pais))
+    if pedidos:
+        for organismo, codigo, pais in db.execute(
+            select(PaisCodigoExterno.organismo, PaisCodigoExterno.codigo, Pais)
+            .join(Pais)
+            .where(PaisCodigoExterno.organismo.in_(["ISO3", "FMI_DM"]))
+            .where(func.upper(PaisCodigoExterno.codigo).in_(pedidos))
+            .order_by(PaisCodigoExterno.organismo)  # FMI_DM antes que ISO3
+        ).all():
+            por_codigo.setdefault(codigo.upper(), (codigo, pais))
     faltan = [escritos[c] for c in pedidos if c not in por_codigo]
     if faltan:
         raise HTTPException(404, f"Países desconocidos: {', '.join(faltan)}")
     encontrados = list(dict.fromkeys(por_codigo[c] for c in pedidos))  # (código, país) sin repetir
 
-    series = []
-    for codigo, pais in encontrados:
-        valores = dict(
-            db.execute(
-                select(DatoInternacionalAnual.anio, DatoInternacionalAnual.valor)
-                .where(
-                    DatoInternacionalAnual.pais_id == pais.id,
-                    DatoInternacionalAnual.indicador_id == ind.id,
-                    DatoInternacionalAnual.fuente_id == fte.id,
-                )
-                .order_by(DatoInternacionalAnual.anio)
-            ).all()
-        )
-        en_rango = lambda anio: (desde is None or anio >= desde) and (hasta is None or anio <= hasta)  # noqa: E731
+    lista_grupos: list[Grupo] = []
+    if pedidos_grupos:
+        if ind.codigo not in REGLAS:
+            raise HTTPException(400, f"Todavía no está definido cómo agregar {ind.codigo} por grupos.")
+        por_grupo = {
+            g.codigo.upper(): g
+            for g in db.scalars(select(Grupo).where(func.upper(Grupo.codigo).in_(pedidos_grupos))).all()
+        }
+        faltan = [escritos_grupos[c] for c in pedidos_grupos if c not in por_grupo]
+        if faltan:
+            raise HTTPException(404, f"Grupos desconocidos: {', '.join(faltan)}")
+        lista_grupos = [por_grupo[c] for c in pedidos_grupos]
+
+    en_rango = lambda anio: (desde is None or anio >= desde) and (hasta is None or anio <= hasta)  # noqa: E731
+
+    def datos_de(valores: dict[int, float | None], nombre: str, por_que=lambda anio: "") -> list[dict]:
+        """Pasa a base 100 (si se pidió), recorta al rango y marca las proyecciones.
+
+        `por_que(año)`: aclaración para el error de año base sin dato (en los grupos, quién falta).
+        """
         # Una serie sin ningún dato en el rango (o en la fuente) vuelve vacía y no participa del índice:
         # el panel la muestra como "sin datos". El 422 queda para la que tiene datos pero no el año base.
         if base is not None and any(v is not None for a, v in valores.items() if en_rango(a)):
             try:
                 valores = a_base_100(valores, base)
             except ErrorIndice as e:
-                raise HTTPException(422, f"{pais.nombre}: {e}") from e
+                raise HTTPException(422, f"{nombre}: {e}{por_que(base)}") from e
         datos = [{"anio": anio, "valor": valor} for anio, valor in valores.items() if en_rango(anio)]
         if proyeccion is not None:  # solo las fuentes que proyectan llevan la marca
             for d in datos:
                 d["proyeccion"] = d["anio"] >= proyeccion
-        series.append({"pais": codigo, "codigo": pais.codigo, "nombre": pais.nombre, "fuente": fte.codigo, "datos": datos})
+        return datos
+
+    series = []
+    for codigo, pais in encontrados:
+        valores = valores_por_pais(db, ind.id, fte.id, [pais.id]).get(pais.id, {})
+        series.append({
+            "pais": codigo, "codigo": pais.codigo, "nombre": pais.nombre, "fuente": fte.codigo,
+            "datos": datos_de(valores, pais.nombre),
+        })
+    for grupo in lista_grupos:
+        series.append(serie_de_grupo(db, ind, fte, grupo, datos_de))
 
     return respuesta(ind, fte, fuentes, base, series, proyeccion)
+
+
+def codigos_pedidos(texto: str | None) -> dict[str, str]:
+    """Códigos separados por coma, sin distinguir mayúsculas (ury = URY) y sin repetidos, en orden.
+
+    Devuelve {código en mayúsculas: como lo escribió quien pidió}.
+    """
+    escritos: dict[str, str] = {}
+    for c in (texto or "").split(","):
+        if c.strip():
+            escritos.setdefault(c.strip().upper(), c.strip())
+    return escritos
+
+
+def valores_por_pais(
+    db: Session, indicador_id: int, fuente_id: int, pais_ids: list[int]
+) -> dict[int, dict[int, float | None]]:
+    """{pais_id: {año: valor}} de un indicador internacional anual en una fuente, en orden de año."""
+    salida: dict[int, dict[int, float | None]] = {}
+    for pais_id, anio, valor in db.execute(
+        select(DatoInternacionalAnual.pais_id, DatoInternacionalAnual.anio, DatoInternacionalAnual.valor)
+        .where(
+            DatoInternacionalAnual.pais_id.in_(pais_ids),
+            DatoInternacionalAnual.indicador_id == indicador_id,
+            DatoInternacionalAnual.fuente_id == fuente_id,
+        )
+        .order_by(DatoInternacionalAnual.anio)
+    ).all():
+        salida.setdefault(pais_id, {})[anio] = valor
+    return salida
+
+
+def codigos_de_api(db: Session, pais_ids: list[int]) -> dict[int, str]:
+    """Código con el que la API nombra a cada país: el del FMI DataMapper (o el ISO3 si no tiene)."""
+    salida: dict[int, str] = {}
+    for pais_id, codigo in db.execute(
+        select(PaisCodigoExterno.pais_id, PaisCodigoExterno.codigo)
+        .where(PaisCodigoExterno.pais_id.in_(pais_ids), PaisCodigoExterno.organismo.in_(["FMI_DM", "ISO3"]))
+        .order_by(PaisCodigoExterno.organismo)  # FMI_DM antes que ISO3
+    ).all():
+        salida.setdefault(pais_id, codigo)
+    return salida
+
+
+def serie_de_grupo(db: Session, ind: Indicador, fte: Fuente, grupo: Grupo, datos_de) -> dict:
+    """Serie agregada de un grupo con los datos de sus miembros en la fuente elegida.
+
+    La regla (suma o promedio ponderado por el PBI, y qué años tienen valor) está en
+    app/analisis/agrupamientos.py. `agregado` dice cómo se calculó y qué miembros entraron; los años sin
+    valor llevan `faltan` (los miembros sin dato ese año) o `faltan_pbi` (los que no tienen el PBI para
+    ponderar, en los promedios).
+    """
+    metodo = REGLAS[ind.codigo]
+    ids = [p.id for p in grupo.paises]
+    pesos = None
+    if metodo == PROMEDIO_PONDERADO_PBI:
+        # El PBI de la misma fuente: nunca se mezclan fuentes, tampoco en los pesos.
+        id_peso = db.scalar(select(Indicador.id).where(Indicador.codigo == INDICADOR_PESO))
+        pesos = valores_por_pais(db, id_peso, fte.id, ids) if id_peso is not None else {}
+    leidos = valores_por_pais(db, ind.id, fte.id, ids)
+    resultado = agregar(metodo, {i: leidos.get(i, {}) for i in ids}, pesos)
+
+    codigos = codigos_de_api(db, ids)
+    nombres = {p.id: p.nombre for p in grupo.paises}
+
+    def describir(lista: list[int]) -> list[dict]:
+        return [{"pais": codigos.get(i), "nombre": nombres[i]} for i in lista]
+
+    def por_que(anio: int) -> str:
+        texto = ""
+        if anio in resultado.faltan:
+            texto += f" Falta el dato de {', '.join(nombres[i] for i in resultado.faltan[anio])}."
+        if anio in resultado.faltan_pbi:
+            texto += f" Falta el PBI de {', '.join(nombres[i] for i in resultado.faltan_pbi[anio])}."
+        return texto
+
+    datos = datos_de(resultado.valores, grupo.nombre, por_que)
+    for d in datos:
+        for clave, faltantes in (("faltan", resultado.faltan), ("faltan_pbi", resultado.faltan_pbi)):
+            if d["anio"] in faltantes:
+                d[clave] = [codigos.get(i) for i in faltantes[d["anio"]]]
+    return {
+        "pais": None,
+        "grupo": grupo.codigo,
+        "codigo": grupo.codigo,
+        "nombre": grupo.nombre,
+        "fuente": fte.codigo,
+        "agregado": {
+            "metodo": metodo,
+            "descripcion": DESCRIPCIONES[metodo],
+            "miembros": describir(resultado.miembros),
+            "fuera": describir(resultado.fuera),
+        },
+        "datos": datos,
+    }
 
 
 def serie_nacional(

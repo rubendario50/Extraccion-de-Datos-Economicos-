@@ -198,6 +198,13 @@ punteado y el rótulo «Proyección del FMI» arriba, en tinta-3; en la leyenda,
 la línea punteada en miniatura. Tooltip: «Proyección del FMI» junto al año. Tabla: filas con el fondo de la banda,
 «proy.» junto al año, corte punteado antes de la primera y la explicación en la nota de la tabla.
 
+### Grupos de países
+Un grupo es una serie más (mismo color en ficha, leyenda, gráfica, tooltip y tabla) que se distingue por texto,
+no por color: en el buscador va en su sección «Grupos» (título en tinta-3, 12 px, separado por un filete de las
+demás opciones) con «N países» a la derecha; su ficha dice «grupo» en tinta-3 junto al nombre; el encabezado de la
+tabla lleva debajo «agregado: suma de N países»; el tooltip, la misma nota debajo del nombre (o qué miembro falta en
+un año vacío). La nota de la tabla explica el cálculo y los miembros.
+
 ### Muestra de la portada
 Fragmento real del producto (`data-ui`): leyenda con valores en mono, marcas del eje en HTML repartidas sobre
 el alto del dibujo, líneas con brillo que se dibujan una vez (`clip-path`, 1,3 s) y números que cuentan

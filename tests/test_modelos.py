@@ -7,7 +7,7 @@ from app.models import DatoInternacionalAnual, Fuente, Indicador, Pais, PaisCodi
 TABLAS = {
     "pais", "pais_codigo_externo", "fuente", "indicador", "indicador_serie_externa",
     "dato_internacional_anual", "dato_internacional_mensual",
-    "dato_nacional_anual", "dato_nacional_mensual", "cotizacion_diaria",
+    "dato_nacional_anual", "dato_nacional_mensual", "cotizacion_diaria", "grupo", "grupo_pais",
 }
 
 

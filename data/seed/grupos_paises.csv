@@ -1,0 +1,121 @@
+grupo,pais,iso3,nombre
+MERCOSUR,025,ARG,Argentina
+MERCOSUR,051,BOL,Bolivia
+MERCOSUR,055,BRA,Brasil
+MERCOSUR,305,PRY,Paraguay
+MERCOSUR,381,URY,Uruguay
+G7,013,DEU,Alemania
+G7,064,CAN,Canadá
+G7,122,USA,Estados Unidos
+G7,138,FRA,Francia
+G7,193,ITA,Italia
+G7,195,JPN,Japón
+G7,320,GBR,Reino Unido
+BRICS,055,BRA,Brasil
+BRICS,079,CHN,China
+BRICS,115,EGY,Egipto
+BRICS,117,ARE,Emiratos Árabes Unidos
+BRICS,125,ETH,Etiopía
+BRICS,172,IND,India
+BRICS,173,IDN,Indonesia
+BRICS,176,IRN,Irán
+BRICS,327,RUS,Rusia
+BRICS,351,ZAF,Sudáfrica
+UE27,013,DEU,Alemania
+UE27,040,AUT,Austria
+UE27,057,BGR,Bulgaria
+UE27,046,BEL,Bélgica
+UE27,077,CZE,Chequia
+UE27,080,CYP,Chipre
+UE27,097,HRV,Croacia
+UE27,100,DNK,Dinamarca
+UE27,119,SVK,Eslovaquia
+UE27,120,SVN,Eslovenia
+UE27,121,ESP,España
+UE27,123,EST,Estonia
+UE27,136,FIN,Finlandia
+UE27,138,FRA,Francia
+UE27,151,GRC,Grecia
+UE27,171,HUN,Hungría
+UE27,177,IRL,Irlanda
+UE27,193,ITA,Italia
+UE27,205,LVA,Letonia
+UE27,210,LTU,Lituania
+UE27,211,LUX,Luxemburgo
+UE27,219,MLT,Malta
+UE27,277,NLD,Países Bajos
+UE27,310,POL,Polonia
+UE27,311,PRT,Portugal
+UE27,326,ROU,Rumanía
+UE27,355,SWE,Suecia
+ALC,022,ATG,Antigua y Barbuda
+ALC,025,ARG,Argentina
+ALC,042,BHS,Bahamas
+ALC,044,BRB,Barbados
+ALC,047,BLZ,Belice
+ALC,051,BOL,Bolivia
+ALC,055,BRA,Brasil
+ALC,078,CHL,Chile
+ALC,082,COL,Colombia
+ALC,095,CRI,Costa Rica
+ALC,098,CUB,Cuba
+ALC,101,DMA,Dominica
+ALC,114,ECU,Ecuador
+ALC,116,SLV,El Salvador
+ALC,150,GRD,Granada
+ALC,160,GTM,Guatemala
+ALC,165,GUY,Guyana
+ALC,166,HTI,Haití
+ALC,169,HND,Honduras
+ALC,194,JAM,Jamaica
+ALC,227,MEX,México
+ALC,246,NIC,Nicaragua
+ALC,303,PAN,Panamá
+ALC,305,PRY,Paraguay
+ALC,307,PER,Perú
+ALC,322,DOM,República Dominicana
+ALC,333,KNA,San Cristóbal y Nieves
+ALC,338,VCT,San Vicente y las Granadinas
+ALC,340,LCA,Santa Lucía
+ALC,357,SUR,Surinam
+ALC,370,TTO,Trinidad y Tobago
+ALC,381,URY,Uruguay
+ALC,384,VEN,Venezuela
+OCDE,013,DEU,Alemania
+OCDE,038,AUS,Australia
+OCDE,040,AUT,Austria
+OCDE,046,BEL,Bélgica
+OCDE,064,CAN,Canadá
+OCDE,077,CZE,Chequia
+OCDE,078,CHL,Chile
+OCDE,082,COL,Colombia
+OCDE,093,KOR,Corea del Sur
+OCDE,095,CRI,Costa Rica
+OCDE,100,DNK,Dinamarca
+OCDE,119,SVK,Eslovaquia
+OCDE,120,SVN,Eslovenia
+OCDE,121,ESP,España
+OCDE,122,USA,Estados Unidos
+OCDE,123,EST,Estonia
+OCDE,136,FIN,Finlandia
+OCDE,138,FRA,Francia
+OCDE,151,GRC,Grecia
+OCDE,171,HUN,Hungría
+OCDE,177,IRL,Irlanda
+OCDE,179,ISL,Islandia
+OCDE,192,ISR,Israel
+OCDE,193,ITA,Italia
+OCDE,195,JPN,Japón
+OCDE,205,LVA,Letonia
+OCDE,210,LTU,Lituania
+OCDE,211,LUX,Luxemburgo
+OCDE,227,MEX,México
+OCDE,261,NOR,Noruega
+OCDE,263,NZL,Nueva Zelanda
+OCDE,277,NLD,Países Bajos
+OCDE,310,POL,Polonia
+OCDE,311,PRT,Portugal
+OCDE,320,GBR,Reino Unido
+OCDE,355,SWE,Suecia
+OCDE,356,CHE,Suiza
+OCDE,373,TUR,Turquía

@@ -1,9 +1,10 @@
 import csv
 
+import pytest
 from sqlalchemy import func, select
 
 from app.etl.semillas import DIR_SEMILLAS, cargar_semillas
-from app.models import Fuente, Indicador, IndicadorSerieExterna, Pais, PaisCodigoExterno
+from app.models import Fuente, Grupo, GrupoPais, Indicador, IndicadorSerieExterna, Pais, PaisCodigoExterno
 
 
 def contar(sesion, modelo):
@@ -105,3 +106,66 @@ def test_indicadores_de_uruguay(sesion):
         "DESEMPLEO_UY": ("mensual", [("INE", "ECH0013")]),
         "DOLAR_INTERBANCARIO": ("diaria", [("BCU", "2225")]),
     }
+
+
+# --- Grupos de países ---
+
+def test_grupos_predefinidos(sesion):
+    resultado = cargar_semillas(sesion)
+    grupos = {g.codigo: g for g in sesion.scalars(select(Grupo))}
+    assert resultado["grupos"] == len(grupos) == 6
+    iso = {codigo: {p.iso3 for p in g.paises} for codigo, g in grupos.items()}
+    assert iso["MERCOSUR"] == {"ARG", "BOL", "BRA", "PRY", "URY"}
+    assert iso["G7"] == {"CAN", "DEU", "FRA", "GBR", "ITA", "JPN", "USA"}
+    assert iso["BRICS"] == {"BRA", "RUS", "IND", "CHN", "ZAF", "EGY", "ETH", "IRN", "ARE", "IDN"}
+    assert len(iso["UE27"]) == 27 and "GBR" not in iso["UE27"] and "HRV" in iso["UE27"]
+    assert len(iso["ALC"]) == 33 and {"CUB", "VEN", "URY", "TTO"} <= iso["ALC"]
+    assert len(iso["OCDE"]) == 38 and "CRI" in iso["OCDE"]
+    # Solo países, nunca agregados de las fuentes; y la descripción documenta la composición.
+    assert not any(p.es_agregado for g in grupos.values() for p in g.paises)
+    assert "Bolivia" in grupos["MERCOSUR"].descripcion and "Venezuela" in grupos["MERCOSUR"].descripcion
+    assert "Arabia Saudita" in grupos["BRICS"].descripcion and "2025" in grupos["BRICS"].descripcion
+
+
+def test_grupos_paises_csv_usa_los_codigos_internos():
+    with (DIR_SEMILLAS / "paises.csv").open(encoding="utf-8") as f:
+        paises = {fila["codigo"]: fila for fila in csv.DictReader(f)}
+    with (DIR_SEMILLAS / "grupos_paises.csv").open(encoding="utf-8") as f:
+        filas = list(csv.DictReader(f))
+    for fila in filas:
+        assert paises[fila["pais"]]["iso3"] == fila["iso3"], fila
+    assert len({(f["grupo"], f["pais"]) for f in filas}) == len(filas)  # sin repetidos
+
+
+def _copiar_semillas(tmp_path, miembros: str, grupos: str = "codigo,nombre,descripcion\nX,Equis,\n"):
+    for nombre in ("fuentes.csv", "indicadores.csv", "paises.csv"):
+        (tmp_path / nombre).write_text((DIR_SEMILLAS / nombre).read_text(encoding="utf-8"), encoding="utf-8")
+    (tmp_path / "grupos.csv").write_text(grupos, encoding="utf-8")
+    (tmp_path / "grupos_paises.csv").write_text("grupo,pais,iso3,nombre\n" + miembros, encoding="utf-8")
+
+
+def test_carga_de_grupos_es_idempotente_y_saca_a_los_que_ya_no_estan(sesion, tmp_path):
+    _copiar_semillas(tmp_path, "X,381,URY,Uruguay\nX,025,ARG,Argentina\n")
+    cargar_semillas(sesion, tmp_path)
+    cargar_semillas(sesion, tmp_path)
+    grupo = sesion.scalar(select(Grupo).where(Grupo.codigo == "X"))
+    assert {p.iso3 for p in grupo.paises} == {"URY", "ARG"}
+    assert contar(sesion, GrupoPais) == 2
+    _copiar_semillas(tmp_path, "X,381,URY,Uruguay\n")
+    cargar_semillas(sesion, tmp_path)
+    sesion.expire_all()
+    assert [p.iso3 for p in sesion.scalar(select(Grupo).where(Grupo.codigo == "X")).paises] == ["URY"]
+
+
+@pytest.mark.parametrize(
+    ("miembros", "texto"),
+    [
+        ("X,381,ARG,Argentina\n", "es URY, no ARG"),
+        ("X,999,URY,Uruguay\n", "país desconocido"),
+        ("Y,381,URY,Uruguay\n", "grupo desconocido"),
+    ],
+)
+def test_grupos_con_errores(sesion, tmp_path, miembros, texto):
+    _copiar_semillas(tmp_path, miembros)
+    with pytest.raises(ValueError, match=texto):
+        cargar_semillas(sesion, tmp_path)

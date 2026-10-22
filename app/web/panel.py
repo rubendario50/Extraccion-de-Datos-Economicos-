@@ -7,12 +7,14 @@ import json
 
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy import func, select
+from sqlalchemy.orm import selectinload
 from sqlalchemy.orm import Session
 
+from app.analisis.agrupamientos import DESCRIPCIONES, REGLAS
 from app.api.series import PAIS_NACIONAL, fuente_por_defecto, fuentes_del_indicador, tabla_de
 from app.auth.dependencias import usuario_actual
 from app.db import get_db
-from app.models import DatoInternacionalAnual, Indicador, Pais, PaisCodigoExterno, Usuario
+from app.models import DatoInternacionalAnual, Grupo, Indicador, Pais, PaisCodigoExterno, Usuario
 from app.web.plantillas import renderizar
 
 router = APIRouter()
@@ -78,6 +80,8 @@ def datos_del_panel(db: Session) -> dict:
             "alcance": ind.alcance,
             "frecuencia": ind.frecuencia,
             "fuentes": lista_fuentes,
+            # Cómo se agrega por grupos (None si no se puede pedir por grupos).
+            "agregacion": REGLAS.get(ind.codigo) if ind.alcance == "internacional" else None,
             "fuente": elegida["codigo"] if elegida else None,
             # Años y países de la fuente por defecto.
             "desde": elegida["desde"] if elegida else None,
@@ -88,10 +92,23 @@ def datos_del_panel(db: Session) -> dict:
         ({"codigo": codigos[p.id], "nombre": p.nombre, "agregado": p.es_agregado} for p in paises.values()),
         key=lambda p: p["nombre"],
     )
+    # Grupos de países: el panel los ofrece en los indicadores que tienen regla de agregación.
+    grupos = [
+        {
+            "codigo": g.codigo,
+            "nombre": g.nombre,
+            "descripcion": g.descripcion,
+            "miembros": [codigos[p.id] for p in g.paises if p.id in codigos],
+        }
+        for g in db.scalars(select(Grupo).options(selectinload(Grupo.paises)).order_by(Grupo.nombre)).all()
+    ]
     primera = next((f for f in salida[0]["fuentes"] if f["codigo"] == salida[0]["fuente"]), None) if salida else None
     return {
         "indicadores": salida,
         "paises": lista_paises,
+        "grupos": grupos,
+        # Texto de cada método de agregación, para la tabla y el tooltip.
+        "agregaciones": DESCRIPCIONES,
         "por_defecto": PAISES_POR_DEFECTO,
         # Fuente que se muestra antes de que cargue el JavaScript (la del primer indicador).
         "fuente": primera["nombre"] if primera else NOMBRES_FUENTE["FMI_DM"],

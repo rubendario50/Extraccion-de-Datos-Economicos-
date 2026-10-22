@@ -3,11 +3,11 @@
 import csv
 from pathlib import Path
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from app.etl.upsert import upsert
-from app.models import Fuente, Indicador, IndicadorSerieExterna, Pais, PaisCodigoExterno
+from app.models import Fuente, Grupo, GrupoPais, Indicador, IndicadorSerieExterna, Pais, PaisCodigoExterno
 
 DIR_SEMILLAS = Path(__file__).resolve().parents[2] / "data" / "seed"
 
@@ -85,11 +85,46 @@ def cargar_indicadores(sesion: Session, ruta: Path) -> int:
     return len(indicadores)
 
 
+def cargar_grupos(sesion: Session, ruta_grupos: Path, ruta_miembros: Path) -> int:
+    """Grupos de países y sus miembros (con el código interno del país).
+
+    La columna `iso3` de grupos_paises.csv repite el código ISO del país para leer el archivo sin buscar cada
+    código interno; si no coincide con el de paises.csv, la carga falla (así un error de tipeo no mete a otro
+    país en el grupo). Los miembros de cada grupo se reemplazan por los del CSV: sacar una fila saca al país.
+    """
+    grupos = _leer_csv(ruta_grupos)
+    upsert(
+        sesion,
+        Grupo,
+        [{"codigo": g["codigo"], "nombre": g["nombre"], "descripcion": g["descripcion"] or None} for g in grupos],
+        claves=["codigo"],
+    )
+    ids_grupo = dict(sesion.execute(select(Grupo.codigo, Grupo.id)).all())
+    paises = {p.codigo: p for p in sesion.scalars(select(Pais)).all()}
+    miembros = []
+    for f in _leer_csv(ruta_miembros):
+        if f["grupo"] not in ids_grupo:
+            raise ValueError(f"grupos_paises.csv: grupo desconocido {f['grupo']!r}")
+        pais = paises.get(f["pais"])
+        if pais is None:
+            raise ValueError(f"grupos_paises.csv: país desconocido {f['pais']!r} en {f['grupo']}")
+        if f.get("iso3") and f["iso3"] != pais.iso3:
+            raise ValueError(f"grupos_paises.csv: el país {f['pais']} es {pais.iso3}, no {f['iso3']} ({f['grupo']})")
+        miembros.append({"grupo_id": ids_grupo[f["grupo"]], "pais_id": pais.id})
+    ids_cargados = [ids_grupo[g["codigo"]] for g in grupos]
+    sesion.execute(delete(GrupoPais).where(GrupoPais.grupo_id.in_(ids_cargados)))
+    upsert(sesion, GrupoPais, miembros, claves=["grupo_id", "pais_id"])
+    return len(grupos)
+
+
 def cargar_semillas(sesion: Session, directorio: Path = DIR_SEMILLAS) -> dict[str, int]:
     resultado = {
         "paises": cargar_paises(sesion, directorio / "paises.csv"),
         "fuentes": cargar_fuentes(sesion, directorio / "fuentes.csv"),
         "indicadores": cargar_indicadores(sesion, directorio / "indicadores.csv"),
     }
+    # Los grupos son opcionales (una carpeta de semillas de prueba puede no tenerlos).
+    if (directorio / "grupos.csv").exists():
+        resultado["grupos"] = cargar_grupos(sesion, directorio / "grupos.csv", directorio / "grupos_paises.csv")
     sesion.commit()
     return resultado

@@ -49,6 +49,12 @@ pyproject.toml
 - `pais`: `id`, `codigo` (interno, único), `nombre` (español), `nombre_en`, `iso2`, `iso3`, `es_agregado` (Mundo, Zona euro, etc.).
 - `pais_codigo_externo`: `pais_id`, `organismo` (`ISO3`, `FMI_DM`, `FMI_WEO`, `BM`), `codigo`. Único por (`organismo`, `codigo`). El FMI DataMapper usa ISO3; el WEO usa los códigos numéricos que están en la planilla del cliente (hoja "Codigos": 512 Afganistán, 213 Argentina, ...). El Banco Mundial usa ISO3 para los países (con excepciones como Kosovo `XKX` y Cisjordania y Gaza `PSE`) y códigos propios para sus agregados; solo se mapean los que tienen equivalente en el FMI (`WLD` Mundo, `EMU` zona euro, `EUU` Unión Europea). Columna `bm` de `paises.csv`. Ojo: un mismo código puede significar cosas distintas en cada organismo (`SSA` es África Subsahariana en el FMI y otro agregado en el BM), por eso cada organismo tiene su columna.
 
+**Grupos de países.** Agregados propios (no las regiones que publican las fuentes, que están en `pais` con `es_agregado`).
+
+- `grupo`: `codigo` interno único (`MERCOSUR`, `G7`, `BRICS`, `UE27`, `ALC`, `OCDE`), `nombre`, `descripcion` (composición documentada: quién entró y cuándo, quién no entra).
+- `grupo_pais`: `grupo_id`, `pais_id` (clave compuesta). Composición actual, la misma para todos los años.
+- Semillas: `data/seed/grupos.csv` y `data/seed/grupos_paises.csv` (código interno del país más su `iso3`, que se controla al cargar). La carga reemplaza los miembros de cada grupo por los del CSV. Migración 0007.
+
 **Fuentes e indicadores.**
 
 - `fuente`: `codigo` (`FMI_DM`, `BM`, `FRED`, `INE`, `BCU`), `nombre`, `url`.
@@ -94,6 +100,14 @@ La API la expone en `/api/series` (`proyeccion_desde` y `proyeccion` en cada dat
 
 Ejecución (CLI): `python -m app.etl fmi`, `bm`, `ine`, `bcu [--desde AAAA-MM-DD]`, o `python -m app.etl todo` (semillas + FMI + BM + INE + BCU). Los tests no llaman a internet: usan `httpx.MockTransport` con respuestas de ejemplo en `tests/fixtures/` (`fmi_<código>.json`, `bm_<código>.json`, `bm_paises.json`, `ine_*.xlsx` (planillas reales recortadas) y `bcu_*.xml` (respuestas reales del servicio)).
 
+## Agrupamientos
+
+El valor de un grupo se calcula al pedirlo (no se guarda), con `app/analisis/agrupamientos.py` (funciones puras) desde `/api/series?grupos=...` (`serie_de_grupo` en `app/api/series.py`).
+
+- **Regla por indicador** (`REGLAS`, el único lugar donde se define; un test controla que todo indicador internacional anual tenga la suya): suma para los niveles (`PBI_USD_CORR`, `POBLACION`, `EXPORTACIONES_USD`, `IMPORTACIONES_USD`); promedio ponderado por `PBI_USD_CORR` para porcentajes del PBI y tasas (`PBI_CRECIMIENTO`, `DEUDA_GOB_GENERAL`, `RESULTADO_FISCAL`, `DEUDA_GOB_CENTRAL`). El peso es el PBI en dólares corrientes del mismo miembro, la misma fuente y el mismo año (el FMI pondera sus agregados con PBI en paridad de poder adquisitivo, que todavía no se carga).
+- **Cobertura**: un año tiene valor solo si están todos los miembros que entran (y, en los promedios, su PBI); si no, queda vacío y la respuesta dice quién falta (`faltan`, `faltan_pbi`). Entran los miembros de los que la fuente publica algún dato del indicador; los que la fuente no publica nunca (Cuba en el FMI) quedan fuera y se informan (`fuera`). No se acepta cobertura parcial: en una suma el total sin un miembro no es el del grupo, y en un promedio cambiaría la composición de un año a otro sin que se note.
+- Nunca se mezclan fuentes, tampoco en los pesos. El índice base 100 se aplica sobre la serie agregada; si el año base quedó vacío, el 422 dice qué miembro falta.
+
 ## Autenticación
 
 Sistema cerrado: todo dato requiere sesión iniciada con doble factor.
@@ -119,6 +133,7 @@ Pendiente para más adelante: recuperación de contraseña, pasarela de pago, co
 - `/login`, `/registro`, `/2fa/verificar` (código del email; `POST /2fa/reenviar` pide otro), `/salir`.
 - `/` panel: elegir indicador, fuente (si el indicador tiene más de una; por defecto la primera con datos), uno o varios países y un rango de años; ver gráfica de líneas y tabla. Los años y países disponibles dependen de la fuente elegida.
 - Proyecciones del FMI: el tramo proyectado de cada línea es punteado y una banda con el rótulo "Proyección del FMI" cubre esos años; el tooltip lo aclara y la tabla marca esas filas con «proy.» (texto, no solo color) y una nota. Ver "Proyecciones del FMI".
+- Grupos de países: el buscador de países tiene una sección "Grupos" (solo los grupos con algún miembro con datos en la fuente elegida). La ficha del grupo dice «grupo»; en la tabla, el encabezado dice cómo se calculó ("agregado: suma de 5 países"), la nota lista los miembros y los que quedan fuera, y las celdas vacías explican qué miembro falta; el tooltip repite el método o, en un año vacío, quién falta. En la URL van aparte: `?paises=URY&grupos=MERCOSUR`.
 - Opción de índice base 100: el usuario elige el año base y todas las series pasan a valer 100 en ese año (en las mensuales y diarias, el promedio de ese año vale 100).
 - Indicadores de Uruguay: van en el grupo "Uruguay" del selector. Tienen una sola serie (en lugar del buscador de países se muestra "Uruguay" fijo), el rango se elige igual por años y la gráfica usa un eje de fechas (ECharts `time`) con el zoom de abajo para acotar el período. La API los devuelve con `fecha` ISO en lugar de `anio`. La tabla muestra una fila por mes o por día; las cotizaciones diarias, con 3 decimales.
 - Interfaz en español rioplatense, sobria y enfocada en los datos. Usar las skills de diseño del proyecto (`.claude/skills/impeccable`, `design-taste-frontend`, `emil-design-eng`).

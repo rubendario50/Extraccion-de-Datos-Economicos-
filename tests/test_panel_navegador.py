@@ -362,7 +362,7 @@ def test_ida_y_vuelta_entre_internacional_y_uruguay(pagina):
     assert pagina.locator("#selector-paises").is_visible() and not pagina.locator("#serie-fija").is_visible()
     assert pagina.locator("#fichas .ficha").count() == 2
     assert opcion_grafica(pagina, "o.xAxis[0].type") == "category"
-    assert pagina.inner_text("#etiqueta-paises") == "Países y regiones"
+    assert pagina.inner_text("#etiqueta-paises") == "Países, regiones y grupos"
 
 
 def test_390px_serie_diaria_sin_scroll_horizontal(servidor, navegador):
@@ -574,5 +574,107 @@ def test_390px_con_proyecciones_sin_scroll_horizontal(servidor, navegador):
             esperar_carga(pg)
             assert pg.evaluate("() => document.documentElement.scrollWidth") <= 390
             assert pg.locator(".leyenda-proyeccion").is_visible()
+        finally:
+            ctx.close()
+
+
+# --- Grupos de países ---
+
+def test_buscador_ofrece_grupos_en_su_seccion(pagina):
+    pagina.goto(f"{BASE}/?indicador=PBI_USD_CORR&fuente=FMI_DM&paises=URY")
+    esperar_carga(pagina)
+    pagina.locator("#buscar-pais").focus()
+    secciones = pagina.locator("#opciones-paises .opcion-seccion").all_inner_texts()
+    assert secciones == ["Grupos", "Países y regiones"]
+    grupos = pagina.locator('#opciones-paises .opcion[data-codigo^="g:"]')
+    nombres = [t.split("\n")[0] for t in grupos.all_inner_texts()]
+    # Solo los grupos con algún miembro con datos en la fuente (en los fixtures del FMI: ARG, URY, USA).
+    assert set(nombres) == {"Mercosur", "G7", "América Latina y el Caribe (CEPAL)", "OCDE"}
+    assert "5 países" in pagina.inner_text('#opciones-paises .opcion[data-codigo="g:MERCOSUR"]')
+    # Se busca por nombre o por código.
+    pagina.fill("#buscar-pais", "merco")
+    assert pagina.locator("#opciones-paises .opcion").first.get_attribute("data-codigo") == "g:MERCOSUR"
+
+
+def test_agregar_un_grupo_y_ver_como_se_calculo(pagina):
+    pagina.goto(f"{BASE}/?indicador=PBI_USD_CORR&fuente=FMI_DM&paises=URY")
+    esperar_carga(pagina)
+    pagina.locator("#buscar-pais").focus()
+    pagina.locator('#opciones-paises .opcion[data-codigo="g:MERCOSUR"]').click()
+    esperar_carga(pagina)
+    assert "grupos=MERCOSUR" in pagina.url
+    ficha = pagina.locator('.ficha[data-codigo="g:MERCOSUR"]')
+    assert ficha.locator(".ficha-tipo").inner_text() == "grupo"
+    # La tabla dice que es un agregado y cómo se calculó.
+    encabezado = pagina.locator("#tabla thead th").nth(2).inner_text()
+    assert "Mercosur" in encabezado and "agregado: suma de 2 países" in encabezado
+    nota = pagina.inner_text("#nota-tabla")
+    assert "Mercosur: suma de Argentina y Uruguay." in nota
+    assert "No incluye a Bolivia, Brasil y Paraguay" in nota
+    assert "un año queda sin valor si falta el dato de algún miembro" in nota
+    assert "Mercosur no incluye a Bolivia, Brasil y Paraguay" in pagina.inner_text("#nota-faltantes")
+    # Mismo color en ficha, leyenda y tabla, y se puede ocultar con la leyenda como un país.
+    assert pagina.locator('button.leyenda-item[data-codigo="g:MERCOSUR"]').count() == 1
+    pagina.locator('button.leyenda-item[data-codigo="g:MERCOSUR"]').click()
+    assert opcion_grafica(pagina, "o.legend[0].selected['Mercosur']") is False
+    # Quitarlo lo saca de la URL.
+    ficha.locator(".ficha-quitar").click()
+    esperar_carga(pagina)
+    assert "grupos=" not in pagina.url
+
+
+def test_tooltip_de_un_grupo(pagina):
+    pagina.goto(f"{BASE}/?indicador=PBI_USD_CORR&fuente=FMI_DM&paises=URY&grupos=MERCOSUR")
+    esperar_carga(pagina)
+    xy = pagina.evaluate("""() => { const g = echarts.getInstanceByDom(document.getElementById('grafica'));
+        const r = document.getElementById('grafica').getBoundingClientRect();
+        const [x, y] = g.convertToPixel({ xAxisIndex: 0, yAxisIndex: 0 }, ['2010', 300]); return [r.x + x, r.y + y]; }""")
+    pagina.mouse.move(xy[0] - 40, xy[1])
+    pagina.mouse.move(xy[0], xy[1], steps=5)
+    pagina.wait_for_timeout(400)
+    notas = pagina.locator(".tooltip-grafica .tt-nota").all_inner_texts()
+    assert notas == ["suma de 2 países"]
+
+
+def test_grupo_con_anios_incompletos_en_la_tabla(pagina):
+    # Deuda (promedio ponderado por el PBI): en 2020 no hay PBI en los fixtures, así que el año queda vacío.
+    pagina.goto(f"{BASE}/?indicador=DEUDA_GOB_GENERAL&fuente=FMI_DM&paises=URY&grupos=MERCOSUR")
+    esperar_carga(pagina)
+    assert "promedio ponderado por PBI de 2 países" in pagina.locator("#tabla thead th").nth(2).inner_text()
+    celda = pagina.locator("#tabla tbody tr", has_text="2020").locator("td").nth(1)
+    assert celda.get_attribute("title") == "Falta el PBI de Argentina y Uruguay"
+    assert "promedio ponderado por el PBI en dólares corrientes de Argentina y Uruguay" in pagina.inner_text("#nota-tabla")
+
+
+def test_grupo_en_base_100(pagina):
+    pagina.goto(f"{BASE}/?indicador=PBI_USD_CORR&fuente=FMI_DM&paises=URY&grupos=MERCOSUR&base=2000")
+    esperar_carga(pagina)
+    assert pagina.locator("#usar-base").is_checked()
+    assert pagina.locator("#estado").is_hidden()
+    fila = pagina.locator("#tabla tbody tr", has_text="2000").locator("td").all_inner_texts()
+    assert fila == ["100,0", "100,0"]
+
+
+def test_grupo_sin_datos_en_la_fuente(pagina):
+    # BRICS no tiene ningún miembro en los fixtures: figura como serie sin datos, no rompe la gráfica.
+    pagina.goto(f"{BASE}/?indicador=PBI_USD_CORR&fuente=FMI_DM&paises=URY&grupos=BRICS")
+    esperar_carga(pagina)
+    vacia = pagina.locator(".leyenda-vacia")
+    assert "BRICS" in vacia.inner_text() and "sin datos en esta fuente" in vacia.inner_text()
+
+
+def test_390px_grupos_con_anios_incompletos_sin_scroll_horizontal(servidor, navegador):
+    # Agregado por el tester: las celdas vacías de un grupo llevan un texto oculto para lectores de pantalla;
+    # no debe escaparse del marco de la tabla y ensanchar la página en un celular.
+    for tema in ("oscuro", "claro"):
+        ctx = navegador.new_context(viewport={"width": 390, "height": 844})
+        ctx.add_cookies([{"name": COOKIE_SESION, "value": servidor, "url": BASE}])
+        ctx.add_init_script(f"localStorage.setItem('tema', '{tema}')")
+        pg = ctx.new_page()
+        try:
+            pg.goto(f"{BASE}/?indicador=DEUDA_GOB_GENERAL&fuente=FMI_DM&paises=URY,ARG,USA&grupos=MERCOSUR,G7")
+            esperar_carga(pg)
+            assert pg.locator("#tabla td.sin-dato[title^='Falta']").count() > 0
+            assert pg.evaluate("() => document.documentElement.scrollWidth") <= 390
         finally:
             ctx.close()

@@ -92,6 +92,22 @@ def test_datos_del_panel_con_dos_fuentes(cliente_api, sesion_con_semillas, clien
     assert '<select id="fuente"' in html
 
 
+def test_datos_del_panel_con_grupos(cliente_api, sesion_con_semillas):
+    html = cliente_api.get("/").text
+    datos = json.loads(re.search(r'<script type="application/json" id="datos-panel">(.*?)</script>', html, re.S).group(1))
+    grupos = {g["codigo"]: g for g in datos["grupos"]}
+    assert set(grupos) == {"MERCOSUR", "G7", "BRICS", "UE27", "ALC", "OCDE"}
+    # Los miembros van con el código que usa el selector (el del FMI DataMapper).
+    assert sorted(grupos["MERCOSUR"]["miembros"]) == ["ARG", "BOL", "BRA", "PRY", "URY"]
+    assert "Bolivia" in grupos["MERCOSUR"]["descripcion"]
+    indicadores = {i["codigo"]: i for i in datos["indicadores"]}
+    assert indicadores["PBI_USD_CORR"]["agregacion"] == "suma"
+    assert indicadores["DEUDA_GOB_GENERAL"]["agregacion"] == "promedio_ponderado_pbi"
+    assert indicadores["IPC_UY"]["agregacion"] is None  # los de Uruguay no se agregan
+    assert set(datos["agregaciones"]) == {"suma", "promedio_ponderado_pbi"}
+    assert "Países, regiones y grupos" in html
+
+
 # --- CSRF ---
 
 def test_csrf_rechazado(cliente_web, sesion_con_semillas):

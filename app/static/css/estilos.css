@@ -838,6 +838,8 @@ input::placeholder { color: var(--tinta-3); opacity: 1; }
   border-radius: var(--radio);
 }
 .ficha-nombre { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Grupo de países: «grupo» escrito al lado del nombre (su serie es un agregado calculado) */
+.ficha-tipo { flex: none; font-size: var(--t-eje); font-weight: 450; color: var(--tinta-3); }
 .marca-serie {
   flex: none;
   width: 0.5rem;
@@ -912,6 +914,14 @@ input::placeholder { color: var(--tinta-3); opacity: 1; }
   .opcion[aria-selected="true"]:hover { background: var(--acento-suave); }
 }
 .opcion-tipo { color: var(--tinta-3); font-size: var(--t-meta); }
+/* Títulos de sección del buscador («Grupos», «Países y regiones») */
+.opcion-seccion {
+  padding: var(--e-2) var(--e-3) var(--e-1);
+  font-size: var(--t-eje);
+  font-weight: 500;
+  color: var(--tinta-3);
+}
+.opcion + .opcion-seccion { margin-top: var(--e-1); border-top: 1px solid var(--borde); }
 .opcion-vacia { padding: var(--e-2) var(--e-3); color: var(--tinta-3); font-size: var(--t-chico); }
 
 /* Resultado */
@@ -1026,6 +1036,9 @@ button.leyenda-item:active { transform: scale(0.97); }
 }
 
 .tabla-marco {
+  /* Bloque contenedor de lo posicionado adentro (el texto .oculto-visual de las celdas): sin esto se escapa
+     del recorte del marco y ensancha la página en pantallas angostas. */
+  position: relative;
   width: fit-content;
   max-width: 100%;
   overflow: auto;
@@ -1092,6 +1105,9 @@ button.leyenda-item:active { transform: scale(0.97); }
 .tabla .encabezado-serie { display: inline-flex; align-items: baseline; gap: 0.375rem; max-width: 15rem; text-align: right; }
 /* La marca se alinea con la primera línea del nombre, aunque el nombre o la nota ocupen varias */
 .tabla .encabezado-serie .marca-serie { align-self: flex-start; margin-top: calc((1.3em - 0.5rem) / 2); }
+/* Nombre y nota alineados a la izquierda, pegados a la marca: si la nota es más ancha que el nombre (grupos),
+   el nombre no queda corrido a la derecha, lejos de su punto. El bloque entero sigue alineado a la derecha. */
+.tabla .encabezado-serie > span:not(.marca-serie) { text-align: left; }
 /* Serie vacía: marca hueca y gris, como la línea punteada de la leyenda */
 .ficha-vacia .marca-serie, .encabezado-vacio .marca-serie {
   background: transparent;
@@ -1133,6 +1149,8 @@ button.leyenda-item:active { transform: scale(0.97); }
 .tt-anio { font-weight: 600; font-size: var(--t-chico); margin-bottom: 0.125rem; }
 .tt-fila { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 0.5rem; }
 .tt-nombre { color: var(--tinta-2); }
+/* Grupos: cómo se calculó (o qué miembro falta), debajo del nombre */
+.tt-nota { display: block; font-size: var(--t-eje); color: var(--tinta-3); }
 .tt-valor { font-weight: 600; font-variant-numeric: tabular-nums; text-align: right; }
 .tt-proyeccion { margin-left: 0.5rem; font-family: var(--fuente); font-size: var(--t-meta); font-weight: 500; color: var(--tinta-2); }
 
