@@ -1,6 +1,7 @@
 """Panel principal: elegir indicador, países y años, y ver la gráfica con la tabla.
 
-Los indicadores nacionales (Uruguay) tienen una sola serie y no usan el selector de países.
+Los indicadores nacionales (Uruguay) y los de mercados (bolsa y materias primas) tienen una sola serie y no
+usan el selector de países.
 """
 
 import json
@@ -11,7 +12,7 @@ from sqlalchemy.orm import selectinload
 from sqlalchemy.orm import Session
 
 from app.analisis.agrupamientos import DESCRIPCIONES, REGLAS
-from app.api.series import PAIS_NACIONAL, fuente_por_defecto, fuentes_del_indicador, tabla_de
+from app.api.series import PAIS_NACIONAL, SERIE_UNICA, fuente_por_defecto, fuentes_del_indicador, tabla_de
 from app.auth.dependencias import usuario_actual
 from app.db import get_db
 from app.models import DatoInternacionalAnual, Grupo, Indicador, Pais, PaisCodigoExterno, Usuario
@@ -25,18 +26,20 @@ NOMBRES_FUENTE = {
     "BM": "Banco Mundial, World Development Indicators",
     "INE": "Instituto Nacional de Estadística (INE)",
     "BCU": "Banco Central del Uruguay (BCU), cotizaciones interbancarias",
+    "FRED": "FRED, Banco de la Reserva Federal de St. Louis",
 }
 # Nombre corto para el selector de fuente (el completo no entra en el control).
-NOMBRES_CORTOS_FUENTE = {"FMI_DM": "FMI", "BM": "Banco Mundial", "INE": "INE", "BCU": "BCU"}
+NOMBRES_CORTOS_FUENTE = {"FMI_DM": "FMI", "BM": "Banco Mundial", "INE": "INE", "BCU": "BCU", "FRED": "FRED"}
 PAISES_POR_DEFECTO = ["URY", "ARG", "WEOWORLD"]
 
 
 def datos_del_panel(db: Session) -> dict:
     """Indicadores con sus fuentes, países con datos y años disponibles por fuente, para armar los controles."""
-    # Primero los internacionales, después los de Uruguay; solo los que tienen tabla de datos.
+    # Primero los internacionales, después los de Uruguay y los mercados; solo los que tienen tabla de datos.
+    orden = {"internacional": 0, "nacional": 1, "mercados": 2}
     indicadores = sorted(
         (i for i in db.scalars(select(Indicador)).all() if tabla_de(i) is not None),
-        key=lambda i: (i.alcance != "internacional", i.id),
+        key=lambda i: (orden.get(i.alcance, 3), i.id),
     )
     codigos = {
         pais_id: codigo
@@ -55,9 +58,9 @@ def datos_del_panel(db: Session) -> dict:
         for fte in fuentes:
             filtro = [col_indicador == ind.id, col_fuente == fte.id, col_valor.is_not(None)]
             desde, hasta = db.execute(select(func.min(col_periodo), func.max(col_periodo)).where(*filtro)).one()
-            if ind.alcance == "nacional":
-                # Una sola serie (Uruguay); los años del selector salen de las fechas.
-                con_datos = [PAIS_NACIONAL] if desde is not None else []
+            if ind.alcance in SERIE_UNICA:
+                # Una sola serie (Uruguay o la cotización); los años del selector salen de las fechas.
+                con_datos = [PAIS_NACIONAL] if desde is not None and ind.alcance == "nacional" else []
                 if ind.frecuencia != "anual" and desde is not None:
                     desde, hasta = desde.year, hasta.year
             else:

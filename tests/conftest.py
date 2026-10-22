@@ -8,6 +8,8 @@ os.environ.setdefault("COOKIE_SECURE", "false")
 # Aunque el .env de la PC tenga Gmail configurado, los tests nunca mandan correo de verdad.
 os.environ["SMTP_USER"] = ""
 os.environ["SMTP_PASSWORD"] = ""
+# Ni la clave real de FRED: los tests que la necesitan pasan una de prueba.
+os.environ["FRED_API_KEY"] = ""
 
 import httpx
 import pytest
@@ -193,4 +195,48 @@ def transporte_bcu(llamadas: list | None = None) -> httpx.MockTransport:
 @pytest.fixture
 def cliente_bcu():
     with httpx.Client(transport=transporte_bcu(), base_url="https://bcu.test/servlet") as c:
+        yield c
+
+
+# Clave de FRED para los tests (32 letras minúsculas y números, como las reales).
+CLAVE_FRED = "clavedepruebaparafred0123456789a"
+
+
+def transporte_fred(llamadas: list | None = None) -> httpx.MockTransport:
+    """Simula fred/series/observations con tests/fixtures/fred_<SERIE>.json (datos reales recortados).
+
+    Como la API real: sin clave o con otra clave responde 400 con `error_message`; una serie sin fixture,
+    400 "The series does not exist."; respeta `observation_start` y `observation_end`.
+    """
+    from datetime import date
+
+    def error(mensaje: str) -> httpx.Response:
+        return httpx.Response(400, json={"error_code": 400, "error_message": f"Bad Request.  {mensaje}"})
+
+    def responder(pedido: httpx.Request) -> httpx.Response:
+        params = pedido.url.params
+        if llamadas is not None:
+            llamadas.append(dict(params))
+        if not pedido.url.path.endswith("/series/observations"):
+            return httpx.Response(404)
+        if not params.get("api_key"):
+            return error("Variable api_key is not set.  Read https://fred.stlouisfed.org/docs/api/api_key.html for more information.")
+        if params["api_key"] != CLAVE_FRED:
+            return error("The value for variable api_key is not registered.  Read https://fred.stlouisfed.org/docs/api/api_key.html for more information.")
+        archivo = FIXTURES / f"fred_{params.get('series_id')}.json"
+        if not archivo.exists():
+            return error("The series does not exist.")
+        cuerpo = json.loads(archivo.read_text(encoding="utf-8"))
+        desde = date.fromisoformat(params.get("observation_start", "1600-01-01"))
+        hasta = date.fromisoformat(params.get("observation_end", "9999-12-31"))
+        cuerpo["observations"] = [o for o in cuerpo["observations"] if desde <= date.fromisoformat(o["date"]) <= hasta]
+        cuerpo["count"] = len(cuerpo["observations"])
+        return httpx.Response(200, json=cuerpo)
+
+    return httpx.MockTransport(responder)
+
+
+@pytest.fixture
+def cliente_fred():
+    with httpx.Client(transport=transporte_fred(), base_url="https://fred.test/fred") as c:
         yield c

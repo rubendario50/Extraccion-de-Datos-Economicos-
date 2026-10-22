@@ -205,6 +205,12 @@ demás opciones) con «N países» a la derecha; su ficha dice «grupo» en tint
 tabla lleva debajo «agregado: suma de N países»; el tooltip, la misma nota debajo del nombre (o qué miembro falta en
 un año vacío). La nota de la tabla explica el cálculo y los miembros.
 
+### Series únicas (Uruguay y bolsa y materias primas)
+Los indicadores de Uruguay y las cotizaciones de FRED tienen una sola serie: en lugar del buscador, una ficha fija
+(sin caja de control) con el nombre de la serie («Uruguay», o la cotización: «S&P 500»), y el rótulo del campo pasa a
+«País» o «Serie». Gráfica con eje de fechas y relleno suave, sin leyenda ni etiqueta final; tabla agrupada por año.
+Las cotizaciones de FRED van con 2 decimales y el dólar del BCU con 3.
+
 ### Muestra de la portada
 Fragmento real del producto (`data-ui`): leyenda con valores en mono, marcas del eje en HTML repartidas sobre
 el alto del dibujo, líneas con brillo que se dibujan una vez (`clip-path`, 1,3 s) y números que cuentan

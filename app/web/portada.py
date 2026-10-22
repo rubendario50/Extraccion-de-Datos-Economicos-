@@ -60,7 +60,9 @@ def _cobertura(db: Session, hoy: date) -> list[dict]:
         return (proyectado if proyectado is not None else hoy.year) - 1
 
     por_fuente: dict[int, dict] = {}
-    for (_, frecuencia), (modelo, col_periodo, col_valor) in TABLAS.items():
+    # Cada tabla una sola vez (las cotizaciones diarias son de Uruguay y de mercados).
+    tablas = {tabla: frecuencia for (_, frecuencia), tabla in TABLAS.items()}
+    for (modelo, col_periodo, col_valor), frecuencia in tablas.items():
         periodo, valor = getattr(modelo, col_periodo), getattr(modelo, col_valor)
         filas = db.execute(
             select(modelo.fuente_id, modelo.indicador_id, func.min(periodo), func.max(periodo))

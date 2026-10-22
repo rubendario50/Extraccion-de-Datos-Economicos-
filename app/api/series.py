@@ -36,9 +36,13 @@ TABLAS = {
     ("nacional", "anual"): (DatoNacionalAnual, "anio", "valor"),
     ("nacional", "mensual"): (DatoNacionalMensual, "periodo", "valor"),
     ("nacional", "diaria"): (CotizacionDiaria, "fecha", "cierre"),
+    ("mercados", "diaria"): (CotizacionDiaria, "fecha", "cierre"),
 }
 # Las series nacionales son de Uruguay: una sola serie, con este código de país.
 PAIS_NACIONAL = "URY"
+# Alcances con una sola serie (no se eligen países ni grupos): Uruguay y los mercados (bolsa y materias
+# primas, cotizaciones de FRED).
+SERIE_UNICA = {"nacional", "mercados"}
 # Fuentes que publican proyecciones (los años desde la edición del WEO). El BM, el INE y el BCU no.
 FUENTES_CON_PROYECCIONES = {"FMI_DM"}
 
@@ -100,7 +104,8 @@ def obtener_series(
     paises: str | None = Query(
         None,
         description="Códigos ISO3 o del FMI DataMapper separados por coma: URY,ARG,WEOWORLD. "
-        "En los indicadores internacionales hace falta al menos un país o un grupo; los nacionales son siempre de Uruguay",
+        "En los indicadores internacionales hace falta al menos un país o un grupo; los nacionales son siempre de "
+        "Uruguay y los de mercados (bolsa y materias primas) no van por país",
     ),
     grupos: str | None = Query(
         None,
@@ -138,9 +143,10 @@ def obtener_series(
     if desde is not None and hasta is not None and desde > hasta:
         raise HTTPException(422, "`desde` no puede ser mayor que `hasta`.")
 
-    if ind.alcance == "nacional":
+    if ind.alcance in SERIE_UNICA:
         if (grupos or "").strip():
-            raise HTTPException(400, f"{ind.codigo} es un indicador de Uruguay: no se puede pedir por grupos.")
+            tipo = "un indicador de Uruguay" if ind.alcance == "nacional" else "una cotización de mercado"
+            raise HTTPException(400, f"{ind.codigo} es {tipo}: no se puede pedir por grupos.")
         serie = serie_nacional(db, ind, fte, paises, desde, hasta, base)
         return respuesta(ind, fte, fuentes, base, [serie], None)
     proyeccion = primer_anio_proyectado(db, ind.id, fte)
@@ -315,15 +321,20 @@ def serie_de_grupo(db: Session, ind: Indicador, fte: Fuente, grupo: Grupo, datos
 def serie_nacional(
     db: Session, ind: Indicador, fte: Fuente, paises: str | None, desde: int | None, hasta: int | None, base: int | None
 ) -> dict:
-    """La única serie de un indicador nacional (Uruguay). `desde`, `hasta` y `base` son años.
+    """La única serie de un indicador nacional (Uruguay) o de mercado (FRED). `desde`, `hasta` y `base` son años.
 
     En las series mensuales y diarias cada dato lleva la fecha ISO ("2024-03-01") en lugar del año, y
-    el índice base 100 toma como 100 el promedio del año base.
+    el índice base 100 toma como 100 el promedio del año base. Las de mercado no son de un país: van con
+    `"pais": null` y el nombre del indicador.
     """
-    otros = sorted({c.strip() for c in (paises or "").split(",") if c.strip() and c.strip().upper() != PAIS_NACIONAL})
+    mercado = ind.alcance == "mercados"
+    escritos = sorted({c.strip() for c in (paises or "").split(",") if c.strip()})
+    otros = escritos if mercado else [c for c in escritos if c.upper() != PAIS_NACIONAL]
+    if otros and mercado:
+        raise HTTPException(400, f"{ind.codigo} es una cotización de mercado: no va por países ({', '.join(otros)}).")
     if otros:
         raise HTTPException(400, f"{ind.codigo} es un indicador de Uruguay: no hay series de {', '.join(otros)}.")
-    uruguay = db.scalar(select(Pais).where(Pais.iso3 == PAIS_NACIONAL))
+    uruguay = None if mercado else db.scalar(select(Pais).where(Pais.iso3 == PAIS_NACIONAL))
     col_periodo, col_valor, col_indicador, col_fuente = tabla_de(ind)
     valores = dict(
         db.execute(
@@ -334,7 +345,7 @@ def serie_nacional(
     )
     anio_de = (lambda p: p.year) if ind.frecuencia != "anual" else (lambda p: p)  # noqa: E731
     en_rango = lambda p: (desde is None or anio_de(p) >= desde) and (hasta is None or anio_de(p) <= hasta)  # noqa: E731
-    nombre = uruguay.nombre if uruguay else "Uruguay"
+    nombre = ind.nombre if mercado else uruguay.nombre if uruguay else "Uruguay"
     if base is not None and any(v is not None for p, v in valores.items() if en_rango(p)):
         try:
             valores = a_base_100(valores, base) if ind.frecuencia == "anual" else a_base_100_promedio(valores, base)
@@ -345,7 +356,7 @@ def serie_nacional(
         {clave: p.isoformat() if isinstance(p, date) else p, "valor": v} for p, v in valores.items() if en_rango(p)
     ]
     return {
-        "pais": PAIS_NACIONAL,
+        "pais": None if mercado else PAIS_NACIONAL,
         "codigo": uruguay.codigo if uruguay else None,
         "nombre": nombre,
         "fuente": fte.codigo,

@@ -1,6 +1,6 @@
 [project]
 name = "extraccion-datos-economicos"
-version = "0.3.0"
+version = "0.3.1"
 description = "Recopilación, análisis y difusión de datos económicos internacionales y de Uruguay."
 readme = "README.md"
 requires-python = ">=3.12"

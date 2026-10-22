@@ -25,7 +25,7 @@ app/
   config.py          # Settings (pydantic-settings) leídos de .env
   db.py              # engine, SessionLocal, Base, get_db
   models/            # modelos SQLAlchemy (paises, indicadores, datos, usuarios)
-  etl/               # cargadores por fuente: fmi.py, banco_mundial.py, ine.py, bcu.py; comun.py (HTTP, TLS, mapeos);
+  etl/               # cargadores por fuente: fmi.py, banco_mundial.py, ine.py, bcu.py, fred.py; comun.py (HTTP, TLS, mapeos);
                      # certificados/ (intermedio TLS que el INE no envía); CLI en __main__.py
   analisis/          # índices base 100 y agrupamientos
   auth/              # registro, login, Google, 2FA, sesiones, CSRF
@@ -66,9 +66,9 @@ pyproject.toml
 - `dato_internacional_anual`: `pais_id`, `indicador_id`, `fuente_id`, `anio`, `valor`, `actualizado_en`. Clave: (`pais_id`, `indicador_id`, `fuente_id`, `anio`).
 - `dato_internacional_mensual`: igual pero con `periodo` (fecha del primer día del mes).
 - `dato_nacional_anual` y `dato_nacional_mensual`: datos de Uruguay, sin `pais_id`. Hoy: `IPC_UY` y `DESEMPLEO_UY` (mensuales, INE).
-- `cotizacion_diaria`: `indicador_id`, `fuente_id`, `fecha`, `cierre` (cierre del día, decisión del cliente). Hoy: `DOLAR_INTERBANCARIO` (BCU).
+- `cotizacion_diaria`: `indicador_id`, `fuente_id`, `fecha`, `cierre` (cierre del día, decisión del cliente). Hoy: `DOLAR_INTERBANCARIO` (BCU) y las cotizaciones de bolsa y materias primas de FRED (`alcance` `mercados`).
 
-La tabla de cada indicador sale de su `alcance` y `frecuencia` (`app/api/series.py`, `TABLAS`): internacional anual, nacional anual, nacional mensual o nacional diaria (cotizaciones).
+La tabla de cada indicador sale de su `alcance` y `frecuencia` (`app/api/series.py`, `TABLAS`): internacional anual, nacional anual, nacional mensual, nacional diaria o mercados diaria (las dos últimas en `cotizacion_diaria`). Los alcances `nacional` y `mercados` tienen una sola serie (`SERIE_UNICA`): no se eligen países ni grupos.
 
 Las cargas son idempotentes: si el valor ya existe se actualiza (upsert), no se duplica.
 
@@ -83,7 +83,8 @@ Preferir APIs oficiales antes que scraping. No scrapear sitios que lo prohíben 
   - `ECH0013` → `DESEMPLEO_UY`: "Tasa de desempleo, por área geográfica" (Encuesta Continua de Hogares), columna "Total País", mensual desde 2006. La planilla intercala meses, trimestres calendario ("Enero - Marzo/06") y el total del año: se guardan solo los meses; trimestres y años se derivan de ellos.
   - Si el INE cambia el formato (no aparecen los encabezados esperados o no quedan datos), la carga falla con un error claro y no guarda nada.
 - BCU (Uruguay): servicio web SOAP oficial de cotizaciones, `POST https://cotizaciones.bcu.gub.uy/wscotizaciones/servlet/awsbcucotizaciones` (WSDL en `?wsdl`; lista de monedas en `awsbcumonedas`). Hasta 366 días por pedido (si no, error 104); un rango sin cotizaciones responde el código 100, que no es un error. Una cotización por día hábil, la del cierre (la página del BCU la titula "cotizaciones interbancarias, cierre del día"); se guarda la venta (`TCV`). Datos desde el 3/1/2000. `codigo_externo` = código de moneda: `2225` (DLS. USA BILLETE) → `DOLAR_INTERBANCARIO`. Otras disponibles: `2230` promedio fondo, `2224` cable, `9800` unidad indexada. La carga es incremental: retoma 10 días antes de la última fecha guardada (`--desde` fuerza otro inicio). Los valores se guardan como los publica el BCU (hay al menos un error de origen: venta 1,905 el 27/04/2000). Términos de uso del BCU: reproducción sin fines de lucro citando la fuente; redistribuir o comercializar requiere autorización expresa del BCU (pendiente antes de publicar abiertamente o cobrar).
-- Próximos: FRED (Dow Jones, oro).
+- FRED (Banco de la Reserva Federal de St. Louis), bolsa y materias primas: API oficial `GET https://api.stlouisfed.org/fred/series/observations?series_id=...&api_key=...&file_type=json` (`app/etl/fred.py`). Requiere clave gratuita (`FRED_API_KEY`, https://fredaccount.stlouisfed.org/apikeys); sin clave la carga falla con un mensaje claro antes de pedir nada. No hay forma oficial de usar la API sin clave. Devuelve `{"observations": [{"date", "value"}]}`, un valor por día hábil (cierre del día); los días sin dato vienen con `"."` y no se guardan. Errores con HTTP 400 y `error_message`: "The series does not exist" → se avisa y se sigue con las demás series; clave inválida → se corta la carga. Los mensajes de error se arman sin la URL (que lleva la clave) y la CLI baja el registro de `httpx` a WARNING por lo mismo. Hasta 100 000 observaciones por pedido (se pagina con `offset`). Carga incremental como el BCU: 10 días antes de la última fecha guardada; la primera vez, toda la serie. `codigo_externo` → indicador: `SP500` → `SP500`, `DJIA` → `DOW_JONES`, `NASDAQCOM` → `NASDAQ` (puntos de índice), `DCOILWTICO` → `PETROLEO_WTI`, `DCOILBRENTEU` → `PETROLEO_BRENT` (dólares por barril), `DHHNGSP` → `GAS_HENRY_HUB` (dólares por millón de BTU). Licencias: S&P 500 y Dow Jones (S&P Dow Jones Indices) y Nasdaq Composite (Nasdaq, Inc.) tienen copyright y restricciones de redistribución; FRED solo da 10 años del S&P 500 y del Dow Jones. Energía: EIA. Revisar la nota de cada serie (`fred/series`, campo `notes`) antes de publicar abiertamente o cobrar.
+- Próximos: oro (FRED dejó de publicar el precio de la LBMA; buscar otra fuente oficial).
 
 ### Proyecciones del FMI
 
@@ -136,8 +137,9 @@ Pendiente para más adelante: recuperación de contraseña, pasarela de pago, co
 - Grupos de países: el buscador de países tiene una sección "Grupos" (solo los grupos con algún miembro con datos en la fuente elegida). La ficha del grupo dice «grupo»; en la tabla, el encabezado dice cómo se calculó ("agregado: suma de 5 países"), la nota lista los miembros y los que quedan fuera, y las celdas vacías explican qué miembro falta; el tooltip repite el método o, en un año vacío, quién falta. En la URL van aparte: `?paises=URY&grupos=MERCOSUR`.
 - Opción de índice base 100: el usuario elige el año base y todas las series pasan a valer 100 en ese año (en las mensuales y diarias, el promedio de ese año vale 100).
 - Indicadores de Uruguay: van en el grupo "Uruguay" del selector. Tienen una sola serie (en lugar del buscador de países se muestra "Uruguay" fijo), el rango se elige igual por años y la gráfica usa un eje de fechas (ECharts `time`) con el zoom de abajo para acotar el período. La API los devuelve con `fecha` ISO en lugar de `anio`. La tabla muestra una fila por mes o por día; las cotizaciones diarias, con 3 decimales.
+- Bolsa y materias primas (FRED): grupo "Bolsa y materias primas" del selector, al final. Funcionan como las series diarias de Uruguay (serie única con la ficha fija, que en lugar de "Uruguay" lleva el nombre de la cotización; eje de fechas; base 100 por el promedio del año; tabla agrupada por año), con 2 decimales como los publica FRED.
 - Interfaz en español rioplatense, sobria y enfocada en los datos. Usar las skills de diseño del proyecto (`.claude/skills/impeccable`, `design-taste-frontend`, `emil-design-eng`).
 
 ## Configuración (`.env`)
 
-`DATABASE_URL`, `SECRET_KEY`, `COOKIE_SECURE`, `ADMIN_EMAIL`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `BASE_URL` (por ahora `http://localhost:8000`), `SMTP_HOST` (`smtp.gmail.com`), `SMTP_PORT` (`587`), `SMTP_USER`, `SMTP_PASSWORD` (contraseña de aplicación de Gmail), `SMTP_FROM` (vacío = `SMTP_USER`). `.env.example` documenta cada una; `.env` nunca se commitea.
+`DATABASE_URL`, `SECRET_KEY`, `COOKIE_SECURE`, `ADMIN_EMAIL`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `BASE_URL` (por ahora `http://localhost:8000`), `SMTP_HOST` (`smtp.gmail.com`), `SMTP_PORT` (`587`), `SMTP_USER`, `SMTP_PASSWORD` (contraseña de aplicación de Gmail), `SMTP_FROM` (vacío = `SMTP_USER`), `FRED_API_KEY` (clave de la API de FRED). `.env.example` documenta cada una; `.env` nunca se commitea.

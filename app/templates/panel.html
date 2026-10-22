@@ -25,7 +25,7 @@
       <div class="campo campo-indicador">
         <label for="indicador">Indicador</label>
         <select id="indicador" name="indicador">
-          {% for alcance, titulo in [("internacional", "Internacionales"), ("nacional", "Uruguay")] %}
+          {% for alcance, titulo in [("internacional", "Internacionales"), ("nacional", "Uruguay"), ("mercados", "Bolsa y materias primas")] %}
           {% set del_grupo = datos.indicadores | selectattr("alcance", "equalto", alcance) | list %}
           {% if del_grupo %}<optgroup label="{{ titulo }}">
             {% for ind in del_grupo %}<option value="{{ ind.codigo }}">{{ ind.nombre }}</option>{% endfor %}
@@ -51,10 +51,10 @@
           <ul class="opciones" id="opciones-paises" role="listbox" aria-labelledby="etiqueta-paises" hidden></ul>
         </div>
       </div>
-      {# Los indicadores de Uruguay tienen una sola serie: en lugar del buscador se muestra fija. #}
+      {# Los indicadores de Uruguay y las cotizaciones de mercado tienen una sola serie: en lugar del buscador se muestra fija (el JS pone el nombre). #}
       <div class="selector-paises serie-fija" id="serie-fija" hidden>
         <ul class="fichas" aria-labelledby="etiqueta-paises">
-          <li class="ficha serie-1"><span class="marca-serie" aria-hidden="true"></span><span class="ficha-nombre">Uruguay</span></li>
+          <li class="ficha serie-1"><span class="marca-serie" aria-hidden="true"></span><span class="ficha-nombre" id="serie-fija-nombre">Uruguay</span></li>
         </ul>
       </div>
       <p class="ayuda" id="ayuda-paises">Hasta 8 a la vez.</p>

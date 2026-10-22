@@ -25,12 +25,13 @@ from app.db import Base, get_db  # noqa: E402
 from app.etl.banco_mundial import cargar_bm  # noqa: E402
 from app.etl.bcu import cargar_bcu  # noqa: E402
 from app.etl.fmi import cargar_fmi  # noqa: E402
+from app.etl.fred import cargar_fred  # noqa: E402
 from app.etl.ine import cargar_ine  # noqa: E402
 from app.etl.semillas import cargar_semillas  # noqa: E402
 from app.main import app as aplicacion  # noqa: E402
 from app.models import IndicadorSerieExterna, Sesion, Usuario  # noqa: E402
 from tests.ayudas import PASSWORD  # noqa: E402
-from tests.conftest import transporte_bcu, transporte_bm, transporte_fmi, transporte_ine  # noqa: E402
+from tests.conftest import CLAVE_FRED, transporte_bcu, transporte_bm, transporte_fmi, transporte_fred, transporte_ine  # noqa: E402
 
 PUERTO = 8799
 BASE = f"http://127.0.0.1:{PUERTO}"
@@ -55,6 +56,8 @@ def servidor():
             cargar_ine(s, c, espera=0)
         with httpx.Client(transport=transporte_bcu(), base_url="https://bcu.test/servlet") as c:
             cargar_bcu(s, c, espera=0, hasta=date(2026, 10, 18))
+        with httpx.Client(transport=transporte_fred(), base_url="https://fred.test/fred") as c:
+            cargar_fred(s, c, espera=0, clave=CLAVE_FRED)
         usuario = Usuario(email="navegador@example.com", nombre="Navegador", password_hash=hashear_password(PASSWORD),
                           rol="usuario")
         s.add(usuario)
@@ -678,3 +681,71 @@ def test_390px_grupos_con_anios_incompletos_sin_scroll_horizontal(servidor, nave
             assert pg.evaluate("() => document.documentElement.scrollWidth") <= 390
         finally:
             ctx.close()
+
+
+# --- Bolsa y materias primas (FRED) ---
+
+def test_cotizacion_de_mercado_con_eje_de_fechas(pagina):
+    pagina.goto(f"{BASE}/?indicador=SP500")
+    esperar_carga(pagina)
+    grupos = pagina.locator("#indicador optgroup").evaluate_all("gs => gs.map((g) => g.label)")
+    assert grupos == ["Internacionales", "Uruguay", "Bolsa y materias primas"]
+    # Una sola serie: en lugar del buscador, la ficha fija con el nombre de la cotización.
+    assert pagina.locator("#selector-paises").is_hidden()
+    assert pagina.inner_text("#serie-fija-nombre") == "S&P 500"
+    assert pagina.inner_text("#etiqueta-paises") == "Serie"
+    assert opcion_grafica(pagina, "o.xAxis[0].type") == "time"
+    assert opcion_grafica(pagina, "o.series.map((s) => [s.name, s.data.length])") == [["S&P 500", 13]]
+    assert pagina.inner_text("#unidad-serie") == "Puntos de índice"
+    assert pagina.inner_text("#fuente-serie") == "Fuente: FRED, Banco de la Reserva Federal de St. Louis"
+    # Tabla agrupada por año, con 2 decimales (como los publica FRED).
+    anios = pagina.locator("#tabla tbody .fila-grupo th[scope=rowgroup]").all_inner_texts()
+    assert anios == ["2025", "2026"]
+    assert "6.878,49" in pagina.inner_text("#tabla")
+    # Sin leyenda ni etiqueta al final de la línea (ya la nombra la ficha), como las series de Uruguay.
+    assert pagina.locator("#leyenda li").count() == 0
+
+
+def test_cotizacion_de_mercado_en_base_100(pagina):
+    pagina.goto(f"{BASE}/?indicador=PETROLEO_WTI&base=2026")
+    esperar_carga(pagina)
+    assert pagina.locator("#usar-base").is_checked()
+    assert pagina.locator("#estado").is_hidden()
+    assert "2026 = 100" in pagina.inner_text("#unidad-serie")
+    assert opcion_grafica(pagina, "o.series[0].markLine.data[0].yAxis") == 100
+
+
+def test_cotizacion_sin_datos_cargados(pagina):
+    pagina.goto(f"{BASE}/?indicador=NASDAQ")
+    esperar_carga(pagina)
+    assert pagina.inner_text("#estado-titulo") == "Todavía no hay datos de esta serie"
+    assert "Nasdaq Composite" in pagina.inner_text("#estado-texto")
+
+
+def test_ida_y_vuelta_entre_mercados_e_internacionales(pagina):
+    pagina.goto(f"{BASE}/?indicador=PBI_USD_CORR&fuente=FMI_DM&paises=URY,ARG")
+    esperar_carga(pagina)
+    pagina.select_option("#indicador", "PETROLEO_BRENT")
+    esperar_carga(pagina)
+    assert pagina.inner_text("#serie-fija-nombre") == "Petróleo Brent"
+    pagina.select_option("#indicador", "DOLAR_INTERBANCARIO")
+    esperar_carga(pagina)
+    assert pagina.inner_text("#serie-fija-nombre") == "Uruguay" and pagina.inner_text("#etiqueta-paises") == "País"
+    pagina.select_option("#indicador", "PBI_USD_CORR")
+    esperar_carga(pagina)
+    assert pagina.locator("#fichas .ficha").count() == 2
+    assert pagina.inner_text("#etiqueta-paises") == "Países, regiones y grupos"
+
+
+def test_390px_cotizacion_sin_scroll_horizontal(servidor, navegador):
+    ctx = navegador.new_context(viewport={"width": 390, "height": 844})
+    ctx.add_cookies([{"name": COOKIE_SESION, "value": servidor, "url": BASE}])
+    pg = ctx.new_page()
+    try:
+        pg.goto(f"{BASE}/?indicador=GAS_HENRY_HUB")
+        esperar_carga(pg)
+        pg.goto(f"{BASE}/?indicador=SP500")
+        esperar_carga(pg)
+        assert pg.evaluate("() => document.documentElement.scrollWidth") <= 390
+    finally:
+        ctx.close()

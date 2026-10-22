@@ -26,6 +26,7 @@
     nombreFuente: $("fuente-serie"),
     selector: $("selector-paises"),
     serieFija: $("serie-fija"),
+    serieFijaNombre: $("serie-fija-nombre"),
     etiquetaPaises: $("etiqueta-paises"),
     ayudaPaises: $("ayuda-paises"),
     fichas: $("fichas"),
@@ -57,11 +58,12 @@
   const fmtEje = new Intl.NumberFormat("es-UY", { maximumSignificantDigits: 6 });
   let fmtValor = new Intl.NumberFormat("es-UY", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 
-  // Las cotizaciones diarias (dólar del BCU) se publican con 3 decimales; el resto, según su tamaño.
+  // El dólar del BCU se publica con 3 decimales y las cotizaciones de FRED (bolsa, petróleo, gas) con 2;
+  // el resto, según su tamaño. `frecuencia` es null en base 100.
   function elegirFormato(series, frecuencia) {
     let maximo = 0;
     for (const s of series) for (const d of s.datos) if (d.valor != null) maximo = Math.max(maximo, Math.abs(d.valor));
-    const decimales = frecuencia === "diaria" ? 3 : maximo < 10 ? 2 : 1;
+    const decimales = frecuencia === "diaria" ? (esMercado() ? 2 : 3) : maximo < 10 ? 2 : 1;
     fmtValor = new Intl.NumberFormat("es-UY", { minimumFractionDigits: decimales, maximumFractionDigits: decimales });
   }
 
@@ -143,19 +145,28 @@
     return porCodigoIndicador.get(estado.indicador);
   }
 
-  // Indicador de Uruguay: una sola serie, sin selector de países.
-  function esNacional() {
+  // Indicador de Uruguay o cotización de mercado (FRED): una sola serie, sin selector de países.
+  function esSerieUnica() {
     const ind = indicadorActual();
-    return Boolean(ind && ind.alcance === "nacional");
+    return Boolean(ind && (ind.alcance === "nacional" || ind.alcance === "mercados"));
   }
 
+  const esMercado = () => indicadorActual()?.alcance === "mercados";
+
   function prepararPaises() {
-    const nacional = esNacional();
-    el.selector.hidden = nacional;
-    el.serieFija.hidden = !nacional;
-    el.etiquetaPaises.textContent = nacional ? "País" : "Países, regiones y grupos";
-    el.ayudaPaises.textContent = nacional ? "Los indicadores de Uruguay tienen una sola serie." : `Hasta ${MAX_SERIES} a la vez.`;
-    if (nacional) cerrarOpciones();
+    const unica = esSerieUnica();
+    const mercado = esMercado();
+    el.selector.hidden = unica;
+    el.serieFija.hidden = !unica;
+    // La ficha fija nombra la serie: Uruguay, o la cotización (que no es de un país).
+    el.serieFijaNombre.textContent = mercado ? indicadorActual().nombre : "Uruguay";
+    el.etiquetaPaises.textContent = mercado ? "Serie" : unica ? "País" : "Países, regiones y grupos";
+    el.ayudaPaises.textContent = mercado
+      ? "Cada cotización es una sola serie."
+      : unica
+        ? "Los indicadores de Uruguay tienen una sola serie."
+        : `Hasta ${MAX_SERIES} a la vez.`;
+    if (unica) cerrarOpciones();
   }
 
   // Fuente elegida del indicador actual: años y países con datos de esa fuente.
@@ -529,7 +540,7 @@
       mostrarEstado("vacio", "Todavía no hay indicadores cargados", "Cargá las semillas y los datos del FMI y del Banco Mundial para empezar.");
       return;
     }
-    if (!estado.paises.length && !esNacional()) {
+    if (!estado.paises.length && !esSerieUnica()) {
       grafica && grafica.clear();
       ultimaRespuesta = null;
       el.unidad.textContent = "";
@@ -547,7 +558,7 @@
     pedidoEnCurso = control;
     // Los indicadores nacionales son siempre de Uruguay: no llevan países.
     const q = new URLSearchParams({ indicador: estado.indicador });
-    if (!esNacional()) {
+    if (!esSerieUnica()) {
       if (paisesElegidos().length) q.set("paises", paisesElegidos().join(","));
       // Si el indicador no se puede agregar, los grupos elegidos quedan en las fichas pero no se piden.
       if (gruposElegidos().length && admiteGrupos()) q.set("grupos", gruposElegidos().join(","));
@@ -667,7 +678,7 @@
   }
 
   function nombreCorto(fuente) {
-    return { FMI_DM: "El FMI", BM: "El Banco Mundial", INE: "El INE", BCU: "El BCU" }[fuente] || "La fuente";
+    return { FMI_DM: "El FMI", BM: "El Banco Mundial", INE: "El INE", BCU: "El BCU", FRED: "FRED" }[fuente] || "La fuente";
   }
 
   const tieneDatos = (s) => s.datos.some((d) => d.valor != null);
@@ -676,6 +687,8 @@
   // grupo, también que ningún año tenga el dato de todos sus miembros. null si tiene datos.
   function motivoVacia(s, cuerpo) {
     if (tieneDatos(s)) return null;
+    // Serie única (Uruguay, mercados): "fuente" si todavía no hay ningún dato cargado.
+    if (esSerieUnica()) return fuenteActual()?.desde == null ? "fuente" : "rango";
     if (s.grupo) return !s.agregado.miembros.length ? "fuente" : s.datos.length ? "incompleto" : "rango";
     const ind = porCodigoIndicador.get(cuerpo.indicador.codigo);
     const fte = ind && ind.fuentes.find((f) => f.codigo === cuerpo.fuente);
@@ -757,7 +770,7 @@
     if (!conDatos.length) {
       if (grafica) grafica.clear();
       const otras = (porCodigoIndicador.get(cuerpo.indicador.codigo)?.fuentes.length || 0) > 1;
-      if (sinFuente.length === series.length && esNacional()) {
+      if (sinFuente.length === series.length && esSerieUnica()) {
         mostrarEstado("vacio", "Todavía no hay datos de esta serie", `Todavía no se cargaron datos de ${cuerpo.indicador.nombre}.`);
       } else if (sinFuente.length === series.length) {
         mostrarEstado(
@@ -792,7 +805,7 @@
     const pocas = vacia.filter((v) => !v).length <= 4;
     const angosto = el.grafica.clientWidth < 560;
     // Uruguay es una sola serie fija: ni etiqueta al final de la línea ni leyenda (ya la nombra el control).
-    const nacional = esNacional();
+    const nacional = esSerieUnica();
     const etiquetas = pocas && !angosto && !nacional;
     const slot = (s) => ranuras.get(claveSerie(s)) || 1;
     const quieto = window.matchMedia("(prefers-reduced-motion: reduce)").matches;

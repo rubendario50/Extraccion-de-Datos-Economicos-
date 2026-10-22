@@ -13,11 +13,41 @@ y el proyecto usa [versionado semántico](https://semver.org/lang/es/).
 - Pedir autorización al BCU antes de redistribuir o cobrar por sus datos: sus
   términos solo permiten la reproducción sin fines de lucro, citando la
   fuente.
+- Revisar las licencias de las series de FRED antes de publicar abiertamente o cobrar: el S&P 500
+  y el Dow Jones (S&P Dow Jones Indices) y el Nasdaq Composite (Nasdaq, Inc.) tienen copyright y
+  restricciones de redistribución, y FRED solo publica los últimos 10 años del S&P 500 y del Dow
+  Jones. Los precios de energía son de la EIA.
 - Decidir qué hacer con el error de origen del BCU del 27/04/2000 (venta
   1,905).
 - Confirmar con Rubén la composición de los grupos (Mercosur con Bolivia, BRICS
   sin Arabia Saudita, OCDE 38) y la regla de cobertura completa, que deja años
   vacíos (por ejemplo América Latina sin Cuba en el Banco Mundial desde 2021).
+- La última etiqueta del eje de fechas queda cortada en el borde derecho de la gráfica.
+
+## [0.3.1] - 2026-10-22
+
+Cotizaciones diarias de bolsa y materias primas desde FRED.
+
+### Agregado
+
+- **Bolsa y materias primas desde FRED** (Banco de la Reserva Federal de St. Louis), con el cierre
+  de cada día: S&P 500, Dow Jones, Nasdaq Composite, petróleo WTI y Brent y gas natural Henry Hub.
+  En el panel van en el grupo «Bolsa y materias primas» del selector, con eje de fechas, índice base
+  100 (vale 100 el promedio del año base) y la tabla agrupada por año, como el dólar del BCU.
+- Comando `python -m app.etl fred` (también dentro de `todo`). La primera carga baja toda la serie
+  que publica FRED y las siguientes retoman 10 días antes de la última cotización. Los días sin
+  cotización no se guardan. Si una serie no existe o viene vacía, se avisa y se sigue con las demás.
+- La API (`/api/series`) devuelve estas series sin país; pedirlas por países o grupos da error 400.
+
+### Para actualizar
+
+- Sacar una clave gratuita de FRED en https://fredaccount.stlouisfed.org/apikeys y ponerla en
+  `FRED_API_KEY` del `.env` (ver «Clave de FRED» en el README). Sin clave, FRED queda entre las
+  fuentes que fallan y las demás se cargan igual.
+- Reconstruir y recrear el contenedor: `podman-compose up -d --build --force-recreate`. No hay
+  migración nueva.
+- Cargar las semillas y FRED: `podman-compose exec app python -m app.etl semillas` y
+  `podman-compose exec app python -m app.etl fred`.
 
 ## [0.3.0] - 2026-10-22
 

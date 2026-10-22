@@ -6,9 +6,9 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import sessionmaker
 
 from app.etl import __main__ as cli
-from app.etl import banco_mundial, bcu, fmi, ine
+from app.etl import banco_mundial, bcu, fmi, fred, ine
 from app.models import CotizacionDiaria, DatoInternacionalAnual, DatoNacionalMensual, Fuente
-from tests.conftest import transporte_bcu, transporte_bm, transporte_fmi, transporte_ine
+from tests.conftest import CLAVE_FRED, transporte_bcu, transporte_bm, transporte_fmi, transporte_fred, transporte_ine
 
 
 @pytest.fixture
@@ -19,6 +19,8 @@ def cli_simulado(sesion, monkeypatch):
     monkeypatch.setattr(banco_mundial, "crear_cliente", lambda: httpx.Client(transport=transporte_bm(), base_url="https://bm.test/v2"))
     monkeypatch.setattr(ine, "crear_cliente", lambda: httpx.Client(transport=transporte_ine(), base_url="https://ine.test/documents"))
     monkeypatch.setattr(bcu, "crear_cliente", lambda: httpx.Client(transport=transporte_bcu(), base_url="https://bcu.test/servlet"))
+    monkeypatch.setattr(fred, "crear_cliente", lambda: httpx.Client(transport=transporte_fred(), base_url="https://fred.test/fred"))
+    monkeypatch.setattr(fred, "clave_api", lambda: CLAVE_FRED)
     monkeypatch.setattr("app.etl.comun.time.sleep", lambda s: None)
     return sesion
 
@@ -38,8 +40,10 @@ def test_todo_carga_semillas_fmi_bm_ine_y_bcu(cli_simulado, capsys):
     salida = capsys.readouterr().out
     assert "paises:" in salida and "NGDPD: 15 valores" in salida and "SP.POP.TOTL: 6 valores" in salida
     assert "IPC_GENERAL: 10 valores" in salida and "ECH0013: 32 valores" in salida and "2225: 11 valores" in salida
+    # FRED: SP500 y WTI con datos (13 días hábiles cada uno), el gas sin datos y el resto sin fixture (0).
+    assert "SP500: 13 valores" in salida and "DCOILWTICO: 13 valores" in salida and "DJIA: 0 valores" in salida
     assert por_fuente(cli_simulado) == {"FMI_DM": 33, "BM": 28}
-    assert contar(cli_simulado, DatoNacionalMensual) == 42 and contar(cli_simulado, CotizacionDiaria) == 11
+    assert contar(cli_simulado, DatoNacionalMensual) == 42 and contar(cli_simulado, CotizacionDiaria) == 11 + 26
 
 
 def test_ine_con_indicadores(cli_simulado, capsys):
@@ -84,10 +88,10 @@ def test_todo_sigue_si_falla_una_fuente(cli_simulado, capsys, monkeypatch):
     assert "NGDPD: 15 valores" in salida.out and "SP.POP.TOTL: 6 valores" in salida.out
     assert "Error (INE): INE: el archivo descargado no es un xlsx" in salida.err
     assert "Error (BCU): BCU: respuesta vacía o mal formada" in salida.err
-    assert "Fallaron: INE, BCU. Se cargaron: FMI, Banco Mundial." in salida.err
+    assert "Fallaron: INE, BCU. Se cargaron: FMI, Banco Mundial, FRED." in salida.err
     assert "Traceback" not in salida.err
     assert por_fuente(cli_simulado) == {"FMI_DM": 33, "BM": 28}
-    assert contar(cli_simulado, DatoNacionalMensual) == 0 and contar(cli_simulado, CotizacionDiaria) == 0
+    assert contar(cli_simulado, DatoNacionalMensual) == 0 and contar(cli_simulado, CotizacionDiaria) == 26
 
 
 def test_comando_suelto_que_falla_sale_con_1(cli_simulado, capsys, monkeypatch):
@@ -114,9 +118,34 @@ def test_todo_si_fallan_las_semillas_no_carga_nada(cli_simulado, capsys, monkeyp
 
 def test_todo_si_fallan_todas_las_fuentes(cli_simulado, capsys, monkeypatch):
     caido = httpx.MockTransport(lambda p: httpx.Response(503))
-    for modulo in (fmi, banco_mundial, ine, bcu):
+    for modulo in (fmi, banco_mundial, ine, bcu, fred):
         monkeypatch.setattr(modulo, "crear_cliente", lambda: httpx.Client(transport=caido, base_url="https://caido.test"))
     assert cli.main(["todo"]) == 1
     err = capsys.readouterr().err
-    assert "Fallaron: FMI, Banco Mundial, INE, BCU. No se cargó ninguna fuente." in err
+    assert "Fallaron: FMI, Banco Mundial, INE, BCU, FRED. No se cargó ninguna fuente." in err
     assert "Se cargaron" not in err and "Traceback" not in err
+
+
+def test_todo_sin_clave_de_fred_sigue_con_las_demas(cli_simulado, capsys, monkeypatch):
+    monkeypatch.setattr(fred, "clave_api", lambda: "")
+    assert cli.main(["todo"]) == 1
+    err = capsys.readouterr().err
+    assert "Error (FRED): Falta la clave de FRED: completá FRED_API_KEY" in err
+    assert "https://fredaccount.stlouisfed.org/apikeys" in err
+    assert "Fallaron: FRED. Se cargaron: FMI, Banco Mundial, INE, BCU." in err
+    assert contar(cli_simulado, CotizacionDiaria) == 11  # el dólar del BCU sí
+
+
+def test_fred_con_indicadores_y_desde(cli_simulado, capsys):
+    assert cli.main(["semillas"]) == 0
+    assert cli.main(["fred", "--indicadores", "SP500", "--desde", "2026-01-01"]) == 0
+    assert "SP500: 6 valores" in capsys.readouterr().out
+    assert min(cli_simulado.scalars(select(CotizacionDiaria.fecha))) == date(2026, 1, 2)
+
+
+def test_fred_no_escribe_la_clave_en_el_registro(cli_simulado, capsys, caplog):
+    assert cli.main(["semillas"]) == 0
+    with caplog.at_level("DEBUG"):
+        assert cli.main(["fred"]) == 0
+    salida = capsys.readouterr()
+    assert CLAVE_FRED not in caplog.text + salida.out + salida.err

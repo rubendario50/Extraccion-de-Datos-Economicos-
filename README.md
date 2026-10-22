@@ -11,7 +11,7 @@ Plataforma de recopilación, análisis y difusión de datos económicos internac
 
 ## Estado
 
-Versión actual: 0.3.0 (ver `CHANGELOG.md`).
+Versión actual: 0.3.1 (ver `CHANGELOG.md`).
 
 Desde la 0.1: base de datos PostgreSQL en Podman, tabla maestra de países (`data/seed/paises.csv`), carga del PBI del FMI DataMapper (PBI en dólares corrientes y crecimiento real) y una web con login (contraseña o Google, doble factor obligatorio) donde se eligen indicador, países y años y se ven la gráfica y la tabla, con opción de índice base 100. La arquitectura está en `docs/arquitectura.md`.
 
@@ -20,6 +20,8 @@ Desde la 0.2: más indicadores internacionales anuales del FMI (deuda bruta y re
 Desde la 0.2.2, primeros datos de Uruguay: IPC mensual (INE, desde 1937), tasa de desempleo mensual (INE, Encuesta Continua de Hogares, desde 2006) y dólar interbancario billete diario (BCU, cierre del día, desde 2000). En el panel aparecen en el grupo "Uruguay" del selector de indicadores, con una sola serie y eje de fechas.
 
 Desde la 0.3, grupos de países: Mercosur, G7, BRICS, Unión Europea (27), América Latina y el Caribe (CEPAL) y OCDE. En el panel se agregan junto a los países (sección "Grupos" del buscador) y se ven como una serie más, calculada con los datos de sus miembros en la fuente elegida (ver "Grupos de países").
+
+Cotizaciones de bolsa y materias primas desde FRED (cierre del día): S&P 500, Dow Jones, Nasdaq Composite, petróleo WTI y Brent y gas natural Henry Hub. En el panel van en el grupo "Bolsa y materias primas" del selector, con una sola serie y eje de fechas, como las de Uruguay. Necesitan una clave gratuita de FRED (ver "Clave de FRED").
 
 ## Levantar el proyecto con Podman
 
@@ -83,12 +85,33 @@ SMTP_FROM=                # opcional; vacío = SMTP_USER
 
 Si `SMTP_USER` o `SMTP_PASSWORD` quedan vacíos (para probar en la PC), no se manda ningún correo: el código aparece en el registro de la app (`podman-compose logs app`) como `Correo sin configurar: código para <email>: 123456`.
 
+### Clave de FRED (bolsa y materias primas)
+
+La API de FRED (Banco de la Reserva Federal de St. Louis) pide una clave gratuita:
+
+1. Crear una cuenta en https://fredaccount.stlouisfed.org/login/secure/ (se puede entrar con Google).
+2. Entrar a https://fredaccount.stlouisfed.org/apikeys, **Request API Key**, escribir para qué se usa (por ejemplo «Plataforma de datos económicos, uso interno») y aceptar los términos.
+3. Copiar la clave (32 letras minúsculas y números) en `FRED_API_KEY` del `.env` y recrear el contenedor: `podman-compose up -d --force-recreate app`.
+
+Sin clave, `python -m app.etl fred` termina con `Error (FRED): Falta la clave de FRED ...` y `todo` carga las demás fuentes e informa a FRED entre las que fallaron. La clave no se escribe en el registro.
+
+**Licencias**: las series de FRED no son todas de libre uso. El S&P 500 y el Dow Jones son de S&P Dow Jones Indices y el Nasdaq Composite de Nasdaq, Inc.: tienen copyright y restricciones de redistribución, y FRED solo publica los últimos 10 años del S&P 500 y del Dow Jones (por eso empiezan en 2016). Los precios del petróleo y del gas son de la EIA (gobierno de EE.UU.). Antes de publicar abiertamente o cobrar hay que leer la nota de copyright de cada serie: `https://api.stlouisfed.org/fred/series?series_id=SP500&api_key=TU_CLAVE&file_type=json` (campo `notes`) y los términos de FRED (https://fred.stlouisfed.org/legal/).
+
+| Indicador | Serie de FRED | Unidad | Desde |
+|---|---|---|---|
+| `SP500` | `SP500` | Puntos de índice | últimos 10 años |
+| `DOW_JONES` | `DJIA` | Puntos de índice | últimos 10 años |
+| `NASDAQ` | `NASDAQCOM` | Puntos de índice (5/2/1971 = 100) | 1971 |
+| `PETROLEO_WTI` | `DCOILWTICO` | Dólares por barril | 1986 |
+| `PETROLEO_BRENT` | `DCOILBRENTEU` | Dólares por barril | 1987 |
+| `GAS_HENRY_HUB` | `DHHNGSP` | Dólares por millón de BTU | 1997 |
+
 ### Cargar los datos
 
-Al arrancar, el contenedor `app` aplica las migraciones de Alembic. Después hay que cargar las semillas (países, fuentes, indicadores) y los datos del FMI, del Banco Mundial, del INE y del BCU (los comandos son iguales en Linux y Windows):
+Al arrancar, el contenedor `app` aplica las migraciones de Alembic. Después hay que cargar las semillas (países, fuentes, indicadores) y los datos del FMI, del Banco Mundial, del INE, del BCU y de FRED (los comandos son iguales en Linux y Windows):
 
 ```bash
-podman-compose exec app python -m app.etl todo                      # semillas + FMI + Banco Mundial + INE + BCU
+podman-compose exec app python -m app.etl todo                      # semillas + FMI + Banco Mundial + INE + BCU + FRED
 
 # o por partes:
 podman-compose exec app python -m app.etl semillas                  # países, fuentes, indicadores y grupos de países
@@ -100,7 +123,11 @@ podman-compose exec app python -m app.etl ine                       # IPC y dese
 podman-compose exec app python -m app.etl ine --indicadores ECH0013 # solo el desempleo
 podman-compose exec app python -m app.etl bcu                       # dólar interbancario (servicio web del BCU)
 podman-compose exec app python -m app.etl bcu --desde 2000-01-01    # volver a bajar toda la serie
+podman-compose exec app python -m app.etl fred                      # bolsa y materias primas (requiere FRED_API_KEY)
+podman-compose exec app python -m app.etl fred --indicadores SP500,DCOILWTICO --desde 2020-01-01
 ```
+
+FRED se baja entera la primera vez (todo el historial que publica de cada serie) y después retoma 10 días antes de la última cotización guardada. Los días sin cotización (FRED los marca con ".") no se guardan. Si una serie no existe en FRED o viene vacía, se avisa en el registro y se sigue con las demás.
 
 La primera carga del BCU baja la serie desde 2000 (un pedido por año, porque el servicio acepta hasta 366 días por pedido); las siguientes retoman 10 días antes de la última cotización guardada. El INE se baja entero cada vez (las planillas son chicas y el INE revisa cifras pasadas).
 
@@ -132,18 +159,18 @@ Toda la API exige una sesión iniciada con el doble factor completo (la cookie d
 
 | Parámetro | Obligatorio | Descripción |
 |---|---|---|
-| `indicador` | sí | Código interno. Internacionales: `PBI_USD_CORR`, `PBI_CRECIMIENTO`, `POBLACION`, `DEUDA_GOB_GENERAL`, `RESULTADO_FISCAL`, `EXPORTACIONES_USD`, `IMPORTACIONES_USD`, `DEUDA_GOB_CENTRAL`. De Uruguay: `IPC_UY`, `DESEMPLEO_UY` (mensuales), `DOLAR_INTERBANCARIO` (diaria). |
-| `paises` | en los internacionales (o `grupos`) | Códigos ISO3 o del FMI DataMapper separados por coma (`URY,ARG,WEOWORLD`). No distingue mayúsculas; los repetidos se ignoran. Hasta 8 entre países y grupos. En los indicadores de Uruguay se omite (o solo `URY`). |
+| `indicador` | sí | Código interno. Internacionales: `PBI_USD_CORR`, `PBI_CRECIMIENTO`, `POBLACION`, `DEUDA_GOB_GENERAL`, `RESULTADO_FISCAL`, `EXPORTACIONES_USD`, `IMPORTACIONES_USD`, `DEUDA_GOB_CENTRAL`. De Uruguay: `IPC_UY`, `DESEMPLEO_UY` (mensuales), `DOLAR_INTERBANCARIO` (diaria). Mercados (diarias, FRED): `SP500`, `DOW_JONES`, `NASDAQ`, `PETROLEO_WTI`, `PETROLEO_BRENT`, `GAS_HENRY_HUB`. |
+| `paises` | en los internacionales (o `grupos`) | Códigos ISO3 o del FMI DataMapper separados por coma (`URY,ARG,WEOWORLD`). No distingue mayúsculas; los repetidos se ignoran. Hasta 8 entre países y grupos. En los indicadores de Uruguay se omite (o solo `URY`); en los de mercados se omite. |
 | `grupos` | no | Códigos de grupos de países separados por coma: `MERCOSUR`, `G7`, `BRICS`, `UE27`, `ALC`, `OCDE`. Cada grupo vuelve como una serie agregada (ver "Grupos de países"). Solo en los indicadores internacionales. |
 | `desde`, `hasta` | no | Primer y último año (inclusive), también en las series mensuales y diarias. |
 | `base` | no | Año base: las series se expresan en índice base 100. En las mensuales y diarias vale 100 el promedio del año base. |
-| `fuente` | no | `FMI_DM`, `BM`, `INE` o `BCU`. Por defecto, la primera fuente con datos para ese indicador (el FMI antes que el Banco Mundial). |
+| `fuente` | no | `FMI_DM`, `BM`, `INE`, `BCU` o `FRED`. Por defecto, la primera fuente con datos para ese indicador (el FMI antes que el Banco Mundial). |
 
 Las fuentes nunca se mezclan: todas las series de una respuesta salen de la misma fuente, aunque el indicador tenga datos de las dos. Las cifras de ambas están en la misma unidad y escala (por ejemplo, el PBI en miles de millones de dólares y la población en millones).
 
-Respuesta: `{"indicador": {codigo, nombre, unidad, escala, alcance, frecuencia}, "fuente", "fuente_nombre", "fuentes", "base", "proyeccion_desde", "series": [{"pais", "codigo", "nombre", "fuente", "datos": [{"anio", "valor"}]}]}`, donde `fuentes` lista las fuentes que publican el indicador. Con la fuente `FMI_DM`, `proyeccion_desde` es el primer año que el FMI publica como proyección y cada dato trae además `"proyeccion": true` o `false`; con las demás fuentes (que no publican proyecciones), `proyeccion_desde` es `null` y los datos no llevan la marca. Cómo se decide el año: `docs/arquitectura.md`, "Proyecciones del FMI". En las series mensuales y diarias cada dato trae `fecha` (ISO, `"2024-03-01"`; en las mensuales, el primer día del mes) en lugar de `anio`, y hay una sola serie, `"pais": "URY"`. Ejemplo: `/api/series?indicador=DOLAR_INTERBANCARIO&desde=2024`. Las series de grupos vienen después de las de países, con `"pais": null`, `"grupo"` (el código) y `"agregado": {"metodo", "descripcion", "miembros", "fuera"}`: `metodo` es `suma` o `promedio_ponderado_pbi`, `miembros` los países que entraron (`[{"pais", "nombre"}]`) y `fuera` los que la fuente no publica. Un año sin valor lleva `"faltan"` (miembros sin el dato ese año) o `"faltan_pbi"` (miembros sin el PBI para ponderar). Ejemplo: `/api/series?indicador=DEUDA_GOB_GENERAL&grupos=MERCOSUR,G7&base=2010`.
+Respuesta: `{"indicador": {codigo, nombre, unidad, escala, alcance, frecuencia}, "fuente", "fuente_nombre", "fuentes", "base", "proyeccion_desde", "series": [{"pais", "codigo", "nombre", "fuente", "datos": [{"anio", "valor"}]}]}`, donde `fuentes` lista las fuentes que publican el indicador. Con la fuente `FMI_DM`, `proyeccion_desde` es el primer año que el FMI publica como proyección y cada dato trae además `"proyeccion": true` o `false`; con las demás fuentes (que no publican proyecciones), `proyeccion_desde` es `null` y los datos no llevan la marca. Cómo se decide el año: `docs/arquitectura.md`, "Proyecciones del FMI". En las series mensuales y diarias cada dato trae `fecha` (ISO, `"2024-03-01"`; en las mensuales, el primer día del mes) en lugar de `anio`, y hay una sola serie, `"pais": "URY"` (en los mercados, `"pais": null` y el nombre de la cotización). Ejemplos: `/api/series?indicador=DOLAR_INTERBANCARIO&desde=2024`, `/api/series?indicador=PETROLEO_BRENT&desde=2020&base=2020`. Las series de grupos vienen después de las de países, con `"pais": null`, `"grupo"` (el código) y `"agregado": {"metodo", "descripcion", "miembros", "fuera"}`: `metodo` es `suma` o `promedio_ponderado_pbi`, `miembros` los países que entraron (`[{"pais", "nombre"}]`) y `fuera` los que la fuente no publica. Un año sin valor lleva `"faltan"` (miembros sin el dato ese año) o `"faltan_pbi"` (miembros sin el PBI para ponderar). Ejemplo: `/api/series?indicador=DEUDA_GOB_GENERAL&grupos=MERCOSUR,G7&base=2010`.
 
-Errores: 404 (indicador, fuente, país o grupo desconocido, o fuente que no publica ese indicador), 400 (más de 8 países y grupos, otro país o un grupo en un indicador de Uruguay), 422 (parámetros inválidos o año base sin dato; en un grupo dice qué miembro falta), con el motivo en `detail`.
+Errores: 404 (indicador, fuente, país o grupo desconocido, o fuente que no publica ese indicador), 400 (más de 8 países y grupos, otro país o un grupo en un indicador de Uruguay, países o grupos en uno de mercados), 422 (parámetros inválidos o año base sin dato; en un grupo dice qué miembro falta), con el motivo en `detail`.
 
 ## Grupos de países
 
@@ -195,7 +222,7 @@ Si el email de Google ya tiene una cuenta con contraseña, se vinculan las dos (
 
 ## Correr los tests en local
 
-Los tests usan SQLite en memoria, respuestas de ejemplo del FMI, del Banco Mundial, del INE (planillas reales recortadas) y del BCU (`tests/fixtures/`) y un Google simulado: no necesitan Podman, PostgreSQL ni internet. Requieren Python 3.12 o superior.
+Los tests usan SQLite en memoria, respuestas de ejemplo del FMI, del Banco Mundial, del INE (planillas reales recortadas), del BCU y de FRED (`tests/fixtures/`) y un Google simulado: no necesitan Podman, PostgreSQL ni internet. Requieren Python 3.12 o superior.
 
 Linux Mint:
 
@@ -217,7 +244,7 @@ py -m venv .venv
 
 Agregar una fila en `data/seed/indicadores.csv` con el código interno, sus datos, la fuente (`FMI_DM` o `BM`) y el código en esa fuente (por ejemplo `LP` en el FMI o `SP.POP.TOTL` en el Banco Mundial), y volver a correr `python -m app.etl semillas` y `python -m app.etl fmi` o `bm`.
 
-En el BCU el código es el de la moneda en su servicio de cotizaciones (por ejemplo `2230`, promedio del dólar fondo; la lista sale de `awsbcumonedas`), y alcanza con la fila del CSV. En el INE cada planilla tiene su propio formato: además de la fila hay que agregar en `app/etl/ine.py` la ruta del archivo y una función que lo lea (`ARCHIVOS`).
+En el BCU el código es el de la moneda en su servicio de cotizaciones (por ejemplo `2230`, promedio del dólar fondo; la lista sale de `awsbcumonedas`), y alcanza con la fila del CSV. En FRED el código es el de la serie (por ejemplo `DEXUSEU`, dólares por euro; se busca en https://fred.stlouisfed.org), con `alcance` `mercados` y `frecuencia` `diaria`, y alcanza con la fila del CSV. En el INE cada planilla tiene su propio formato: además de la fila hay que agregar en `app/etl/ine.py` la ruta del archivo y una función que lo lea (`ARCHIVOS`).
 
 Si el indicador es internacional y anual, agregar también en `REGLAS` (`app/analisis/agrupamientos.py`) cómo se agrega por grupos (suma o promedio ponderado por el PBI); un test avisa si falta.
 

@@ -5,7 +5,8 @@
     python -m app.etl bm [--indicadores NY.GDP.MKTP.CD,SP.POP.TOTL]
     python -m app.etl ine [--indicadores IPC_GENERAL,ECH0013]
     python -m app.etl bcu [--indicadores 2225] [--desde 2000-01-01]
-    python -m app.etl todo        # semillas + fmi + bm + ine + bcu
+    python -m app.etl fred [--indicadores SP500,DCOILWTICO] [--desde 2020-01-01]   # requiere FRED_API_KEY
+    python -m app.etl todo        # semillas + fmi + bm + ine + bcu + fred
 """
 
 import argparse
@@ -16,7 +17,7 @@ from datetime import date
 import httpx
 
 from app.db import SessionLocal
-from app.etl import banco_mundial, bcu, fmi, ine
+from app.etl import banco_mundial, bcu, fmi, fred, ine
 from app.etl.semillas import cargar_semillas
 
 
@@ -46,10 +47,18 @@ def main(argv: list[str] | None = None) -> int:
         "--desde", type=date.fromisoformat,
         help="Primera fecha (AAAA-MM-DD). Por defecto retoma desde la última cotización guardada, o desde 2000",
     )
-    sub.add_parser("todo", help="Carga las semillas y todos los indicadores (FMI, Banco Mundial, INE y BCU)")
+    p_fred = sub.add_parser("fred", help="Descarga cotizaciones de bolsa y materias primas de FRED (requiere FRED_API_KEY)")
+    p_fred.add_argument("--indicadores", help="Códigos de FRED separados por coma (por defecto, todos los definidos)")
+    p_fred.add_argument(
+        "--desde", type=date.fromisoformat,
+        help="Primera fecha (AAAA-MM-DD). Por defecto retoma desde la última cotización guardada, o baja toda la serie",
+    )
+    sub.add_parser("todo", help="Carga las semillas y todos los indicadores (FMI, Banco Mundial, INE, BCU y FRED)")
     args = parser.parse_args(argv)
 
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
+    # httpx registra cada URL pedida, y la de FRED lleva la clave: sus avisos solo desde WARNING.
+    logging.getLogger("httpx").setLevel(logging.WARNING)
     codigos = _codigos(getattr(args, "indicadores", None))
     # (comando, nombre para el informe, función que carga). En `todo` se corren todos.
     pasos = [
@@ -58,6 +67,7 @@ def main(argv: list[str] | None = None) -> int:
         ("bm", "Banco Mundial", lambda s: _cargar(banco_mundial, banco_mundial.cargar_bm, s, codigos)),
         ("ine", "INE", lambda s: _cargar(ine, ine.cargar_ine, s, codigos)),
         ("bcu", "BCU", lambda s: _cargar(bcu, bcu.cargar_bcu, s, codigos, desde=getattr(args, "desde", None))),
+        ("fred", "FRED", lambda s: _cargar(fred, fred.cargar_fred, s, codigos, desde=getattr(args, "desde", None))),
     ]
     fallaron, cargadas = [], []
     with SessionLocal() as sesion:

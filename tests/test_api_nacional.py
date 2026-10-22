@@ -93,8 +93,10 @@ def test_datos_del_panel_con_indicadores_nacionales(con_uruguay, sesion_con_semi
     html = con_uruguay.get("/").text
     datos = json.loads(re.search(r'<script type="application/json" id="datos-panel">(.*?)</script>', html, re.S).group(1))
     codigos = [i["codigo"] for i in datos["indicadores"]]
-    # Primero los internacionales y después los de Uruguay.
-    assert codigos[0] == "PBI_USD_CORR" and codigos[-3:] == ["IPC_UY", "DESEMPLEO_UY", "DOLAR_INTERBANCARIO"]
+    # Primero los internacionales, después los de Uruguay y al final los mercados (FRED).
+    uruguay = codigos.index("IPC_UY")
+    assert codigos[0] == "PBI_USD_CORR" and codigos[uruguay:uruguay + 3] == ["IPC_UY", "DESEMPLEO_UY", "DOLAR_INTERBANCARIO"]
+    assert codigos[uruguay + 3:] == ["SP500", "DOW_JONES", "NASDAQ", "PETROLEO_WTI", "PETROLEO_BRENT", "GAS_HENRY_HUB"]
     ipc = next(i for i in datos["indicadores"] if i["codigo"] == "IPC_UY")
     assert (ipc["alcance"], ipc["frecuencia"], ipc["fuente"]) == ("nacional", "mensual", "INE")
     (ine,) = ipc["fuentes"]
