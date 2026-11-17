@@ -24,6 +24,23 @@ y el proyecto usa [versionado semántico](https://semver.org/lang/es/).
   vacíos (por ejemplo América Latina sin Cuba en el Banco Mundial desde 2021).
 - La última etiqueta del eje de fechas queda cortada en el borde derecho de la gráfica.
 
+## [0.3.2] - 2026-11-17
+
+La marca "Datos Económicos" lleva al inicio en todas las pantallas.
+
+### Cambiado
+
+- La marca "Datos Económicos" (logo y texto) de las pantallas de ingreso, registro, código
+  por correo, salida y error ahora es un enlace al inicio, como en el panel. Sin sesión lleva
+  al ingreso con la portada; con la sesión a medio ingresar vuelve a pedir el código (nunca
+  muestra el panel sin el segundo factor). Para los lectores de pantalla el enlace se llama
+  "Datos Económicos, ir al inicio", también en el panel.
+
+### Para actualizar
+
+- Reconstruir y recrear el contenedor: `podman-compose up -d --build --force-recreate`. No hay
+  migración nueva ni datos para cargar.
+
 ## [0.3.1] - 2026-10-22
 
 Cotizaciones diarias de bolsa y materias primas desde FRED.

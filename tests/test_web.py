@@ -185,6 +185,42 @@ def test_portada_no_va_en_las_pantallas_del_doble_factor(cliente_web, sesion_con
     assert "acceso-portada" not in cliente_web.get("/2fa/verificar").text
 
 
+MARCA_AL_INICIO = re.compile(r'<a class="marca" href="/" aria-label="Datos Económicos, ir al inicio">')
+
+
+def test_marca_de_las_pantallas_de_acceso_lleva_al_inicio(cliente_web):
+    for ruta in ("/login", "/registro"):
+        assert MARCA_AL_INICIO.search(cliente_web.get(ruta).text), ruta
+    assert cliente_web.get("/").headers["location"] == "/login"
+
+
+def test_marca_en_el_doble_factor_no_saltea_el_codigo(cliente_web, sesion_con_semillas, buzon):
+    registrar(cliente_web)
+    assert MARCA_AL_INICIO.search(cliente_web.get("/2fa/verificar").text)
+    # Ir al inicio con la sesión a medio ingresar vuelve a pedir el código, nunca muestra el panel.
+    r = cliente_web.get("/", follow_redirects=True)
+    assert r.status_code == 200 and str(r.url).endswith("/2fa/verificar")
+    assert "Revisá tu correo" in r.text and 'id="filtros"' not in r.text
+    assert cliente_web.get("/api/series", params=PARAMS).status_code == 401
+
+
+def test_marca_en_salir_error_y_panel_con_sesion_completa(cliente_api):
+    # Salir y la pantalla de error (CSRF inválido) también heredan la marca enlazada.
+    assert MARCA_AL_INICIO.search(cliente_api.get("/salir").text)
+    r = cliente_api.post("/salir", data={"csrf": "x"})
+    assert r.status_code == 403 and MARCA_AL_INICIO.search(r.text)
+    # En el panel la marca también se llama igual para los lectores de pantalla.
+    r = cliente_api.get("/")
+    assert r.status_code == 200 and MARCA_AL_INICIO.search(r.text)
+    assert r.text.count('class="marca"') == 1
+
+
+def test_marca_en_salir_con_sesion_a_medio_ingresar(cliente_web):
+    registrar(cliente_web)
+    assert MARCA_AL_INICIO.search(cliente_web.get("/salir").text)
+    assert cliente_web.get("/").headers["location"] == "/2fa/verificar"
+
+
 def test_datos_portada_hasta_el_ultimo_anio_cerrado(sesion_con_semillas, cliente_fmi):
     from datetime import date
 

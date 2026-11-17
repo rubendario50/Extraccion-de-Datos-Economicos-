@@ -7,7 +7,7 @@
 {% endblock %}
 {% block cuerpo %}
 <header class="barra">
-  <a class="marca" href="/">{% include "_logo.html" %}Datos Económicos</a>
+  <a class="marca" href="/" aria-label="Datos Económicos, ir al inicio">{% include "_logo.html" %}Datos Económicos</a>
   <div class="barra-usuario">
     {% include "_tema.html" %}
     <span class="avatar" aria-hidden="true">{{ (usuario.nombre or usuario.email)[:1] | upper }}</span>

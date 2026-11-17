@@ -749,3 +749,59 @@ def test_390px_cotizacion_sin_scroll_horizontal(servidor, navegador):
         assert pg.evaluate("() => document.documentElement.scrollWidth") <= 390
     finally:
         ctx.close()
+
+
+# --- La marca lleva al inicio ---
+
+ESTILO_MARCA = """(el) => { const c = getComputedStyle(el); return {
+    subrayado: c.textDecorationLine, color: c.color,
+    tinta: getComputedStyle(document.documentElement).getPropertyValue('--tinta').trim(),
+    contorno: c.outlineStyle, ancho: el.getBoundingClientRect().right } }"""
+
+
+def test_marca_en_el_login_lleva_al_inicio_en_ambos_temas_a_390px(servidor, navegador):
+    for tema in ("oscuro", "claro"):
+        ctx = navegador.new_context(viewport={"width": 390, "height": 844})
+        ctx.add_init_script(f"localStorage.setItem('tema', '{tema}')")
+        pg = ctx.new_page()
+        try:
+            pg.goto(f"{BASE}/registro")
+            marca = pg.get_by_role("link", name="Datos Económicos, ir al inicio")
+            assert marca.count() == 1
+            estilo = marca.evaluate(ESTILO_MARCA)
+            # Igual que el texto de antes: sin subrayado, del color de la tinta, dentro de los 390 px.
+            assert estilo["subrayado"] == "none" and estilo["ancho"] <= 390
+            tinta = pg.evaluate("(t) => { const d = document.createElement('div'); d.style.color = t; "
+                                "document.body.append(d); const c = getComputedStyle(d).color; d.remove(); return c; }",
+                                estilo["tinta"])
+            assert estilo["color"] == tinta, (tema, estilo)
+            assert pg.evaluate("() => document.documentElement.scrollWidth") <= 390
+            # Con teclado: el foco llega a la marca y se ve.
+            for _ in range(4):
+                pg.keyboard.press("Tab")
+                if pg.evaluate("() => document.activeElement.classList.contains('marca')"):
+                    break
+            assert marca.evaluate(ESTILO_MARCA)["contorno"] == "solid"
+            # Sin sesión, el inicio es el login con la portada.
+            marca.click()
+            pg.wait_for_url(f"{BASE}/login")
+        finally:
+            ctx.close()
+
+
+def test_marca_en_el_doble_factor_no_lleva_al_panel(servidor, navegador):
+    ctx = navegador.new_context(viewport={"width": 1440, "height": 1000})
+    pg = ctx.new_page()
+    try:
+        pg.goto(f"{BASE}/login")
+        pg.fill("#email", "navegador@example.com")
+        pg.fill("#password", PASSWORD)
+        pg.locator("form.formulario button[type=submit]").click()
+        pg.wait_for_url(re.compile(r"/2fa/verificar"))
+        pg.get_by_role("link", name="Datos Económicos, ir al inicio").click()
+        pg.wait_for_load_state()
+        # Vuelve a pedir el código: el panel solo se ve con el segundo factor hecho.
+        assert re.search(r"/2fa/verificar$", pg.url)
+        assert pg.locator("#codigo").count() == 1 and pg.locator("#filtros").count() == 0
+    finally:
+        ctx.close()
