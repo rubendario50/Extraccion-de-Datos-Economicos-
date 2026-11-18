@@ -183,8 +183,8 @@ def test_con_smtp_configurado_no_se_registran_codigo_ni_password(
     assert "111111" not in texto
     assert "clave-secreta-app" not in texto
     if servidor is SmtpAuthFalla:
+        # El correo del registro sale después de responder: el error queda en el registro (sin el código).
         assert any(r.levelname == "ERROR" for r in caplog.records)
-        assert sesion_con_semillas.scalar(select(CodigoEmail)).usado_en is not None  # anulado
 
 
 @pytest.fixture

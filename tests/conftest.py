@@ -121,9 +121,10 @@ def cliente_bm():
 
 @pytest.fixture(autouse=True)
 def buzon(monkeypatch):
-    """Reemplaza el envío de correo: los códigos quedan en la lista `buzon.enviados`."""
+    """Reemplaza el envío de correo: los códigos quedan en `buzon.enviados` y los avisos en `buzon.avisos`."""
     falso = Buzon()
     monkeypatch.setattr("app.auth.correo.enviar_codigo", falso.enviar_codigo)
+    monkeypatch.setattr("app.auth.correo.enviar_aviso_cuenta_existente", falso.enviar_aviso_cuenta_existente)
     return falso
 
 

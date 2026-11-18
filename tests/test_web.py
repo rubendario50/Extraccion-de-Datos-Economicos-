@@ -307,3 +307,30 @@ def test_datos_portada_se_guardan_unos_minutos(sesion_con_semillas, cliente_fmi,
     reloj[0] += portada.CACHE_SEGUNDOS + 1  # vencido: se vuelve a consultar
     portada.datos_portada(sesion_con_semillas)
     assert len(llamadas) == 2
+
+
+# --- Página 404 y favicon ---
+
+@pytest.mark.parametrize("ruta", ["/noexiste", "/panel/viejo", "/static/no-esta.css"])
+def test_ruta_inexistente_muestra_pagina_404_en_espanol(cliente_web, ruta):
+    r = cliente_web.get(ruta)
+    assert r.status_code == 404 and r.headers["content-type"].startswith("text/html")
+    assert "No encontramos esa página" in r.text
+    assert '<a href="/">Ir al inicio</a>' in r.text
+    assert "/static/css/estilos.css" in r.text and 'class="marca"' in r.text  # el mismo estilo del sitio
+
+
+def test_ruta_inexistente_de_la_api_sigue_en_json(cliente_api):
+    r = cliente_api.get("/api/noexiste")
+    assert r.status_code == 404 and r.headers["content-type"] == "application/json"
+    assert r.json() == {"detail": "Not Found"}
+    r = cliente_api.get("/api/series", params={"indicador": "NO_EXISTE", "paises": "URY"})
+    assert r.status_code == 404 and "Indicador desconocido" in r.json()["detail"]
+
+
+def test_favicon_enlazado_y_servido(cliente_web):
+    for ruta in ["/login", "/registro", "/noexiste"]:
+        assert '<link rel="icon" href="/static/favicon.svg' in cliente_web.get(ruta).text
+    r = cliente_web.get("/favicon.ico")
+    assert r.status_code == 200 and r.headers["content-type"].startswith("image/svg+xml")
+    assert r.content.startswith(b"<svg") and r.content == cliente_web.get("/static/favicon.svg").content

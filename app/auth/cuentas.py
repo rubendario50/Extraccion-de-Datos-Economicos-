@@ -1,16 +1,18 @@
 """Reglas de las cuentas: registro, login con bloqueo por intentos y doble factor por email."""
 
 import math
+import secrets
 from dataclasses import dataclass
 from datetime import timedelta
 
-from sqlalchemy import select
+from fastapi import BackgroundTasks
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from app.auth import correo, seguridad
 from app.auth.sesiones import ahora, con_zona
 from app.config import get_settings
-from app.models import CodigoEmail, Usuario
+from app.models import CodigoEmail, Sesion, Usuario
 
 MAX_INTENTOS = 5
 DURACION_BLOQUEO = timedelta(minutes=15)
@@ -45,7 +47,10 @@ class DatosRegistro:
 
 
 def validar_registro(db: Session, datos: DatosRegistro) -> dict[str, str]:
-    """Devuelve los errores por campo (vacío si todo está bien)."""
+    """Devuelve los errores por campo (vacío si todo está bien).
+
+    Que el email ya tenga cuenta no es un error: la pantalla no lo revela (ver `registrar_repetido`).
+    """
     errores = {}
     if not datos.nombre.strip():
         errores["nombre"] = "Escribí tu nombre."
@@ -54,8 +59,6 @@ def validar_registro(db: Session, datos: DatosRegistro) -> dict[str, str]:
     email = normalizar_email(datos.email)
     if not email_valido(email):
         errores["email"] = "Escribí un email válido, por ejemplo nombre@dominio.com."
-    elif db.scalar(select(Usuario.id).where(Usuario.email == email)) is not None:
-        errores["email"] = "Ya hay una cuenta con ese email. Iniciá sesión o usá otro."
     if len(datos.password) < seguridad.LARGO_MINIMO_PASSWORD:
         errores["password"] = f"La contraseña tiene que tener al menos {seguridad.LARGO_MINIMO_PASSWORD} caracteres."
     elif len(datos.password) > seguridad.LARGO_MAXIMO_PASSWORD:
@@ -63,6 +66,63 @@ def validar_registro(db: Session, datos: DatosRegistro) -> dict[str, str]:
     elif datos.password != datos.confirmacion:
         errores["confirmacion"] = "Las contraseñas no coinciden."
     return errores
+
+
+def buscar_por_email(db: Session, email: str) -> Usuario | None:
+    return db.scalar(select(Usuario).where(Usuario.email == normalizar_email(email)))
+
+
+ESPERA_AVISO_REGISTRO = timedelta(minutes=15)
+CONSERVAR_REGISTROS_REPETIDOS = timedelta(days=1)
+
+
+def registrar_repetido(db: Session, datos: DatosRegistro, cuenta: Usuario) -> Usuario:
+    """Registro con el email de `cuenta`, que ya existe. Para no revelarlo, se crea un usuario «pendiente»
+    que recorre lo mismo que uno nuevo (sesión pendiente, códigos, intentos, bloqueo y límites de envío)
+    pero que ningún código completa; a la cuenta real, que no se toca, le llega un aviso en lugar del código.
+    """
+    seguridad.hashear_password(datos.password)  # lo mismo que tarda un registro nuevo; no se guarda
+    limite = ahora() - CONSERVAR_REGISTROS_REPETIDOS
+    viejos = list(db.scalars(
+        select(Usuario.id).where(Usuario.cuenta_de_id.is_not(None), Usuario.creado_en < limite)
+    ))
+    if viejos:
+        db.execute(delete(Sesion).where(Sesion.usuario_id.in_(viejos)))
+        db.execute(delete(CodigoEmail).where(CodigoEmail.usuario_id.in_(viejos)))
+        db.execute(delete(Usuario).where(Usuario.id.in_(viejos)))
+    pendiente = Usuario(
+        email=f"pendiente-{secrets.token_hex(16)}@registro.invalid",  # nadie puede ingresar con este email
+        nombre=datos.nombre.strip(),
+        password_hash=None,
+        rol="usuario",
+        cuenta_de_id=cuenta.id,
+    )
+    db.add(pendiente)
+    db.commit()
+    return pendiente
+
+
+def _sin_esperar(nombre: str, *args) -> None:
+    """Manda un correo después de responder. Si falla, ya quedó en el registro (log) de `correo`."""
+    try:
+        getattr(correo, nombre)(*args)
+    except correo.ErrorCorreo:
+        pass
+
+
+def _avisar_cuenta_existente(db: Session, cuenta: Usuario, tareas: BackgroundTasks | None) -> None:
+    """Aviso de «ya tenés cuenta» a `cuenta`, como máximo uno cada ESPERA_AVISO_REGISTRO, para que el
+    registro no sirva para inundar un buzón (si ya se mandó uno hace menos, no se manda nada)."""
+    momento = ahora()
+    anterior = con_zona(cuenta.ultimo_aviso_registro)
+    if anterior is not None and momento - anterior < ESPERA_AVISO_REGISTRO:
+        return
+    cuenta.ultimo_aviso_registro = momento
+    db.commit()
+    if tareas is not None:
+        tareas.add_task(_sin_esperar, "enviar_aviso_cuenta_existente", cuenta.email, cuenta.nombre)
+    else:
+        _sin_esperar("enviar_aviso_cuenta_existente", cuenta.email, cuenta.nombre)
 
 
 def registrar(db: Session, datos: DatosRegistro) -> Usuario:
@@ -171,11 +231,15 @@ def _vigente(codigos: list[CodigoEmail], momento) -> CodigoEmail | None:
     return None
 
 
-def enviar_codigo(db: Session, usuario: Usuario) -> None:
+def enviar_codigo(db: Session, usuario: Usuario, tareas: BackgroundTasks | None = None) -> None:
     """Genera un código nuevo (el anterior deja de valer) y lo manda al email del usuario.
 
     Lanza EsperaReenvio o LimiteEnvios si hay que esperar, y ErrorCuenta si la cuenta está bloqueada
     o no se pudo mandar el correo.
+
+    Con `tareas`, el correo sale después de responder: la respuesta no espera al servidor SMTP (y un
+    error de envío solo queda en el registro). En un registro repetido el código no se manda a nadie:
+    a la cuenta real le llega el aviso de que ya tiene cuenta.
     """
     if minutos_de_bloqueo(usuario):
         raise ErrorCuenta(mensaje_bloqueo(usuario))
@@ -208,21 +272,28 @@ def enviar_codigo(db: Session, usuario: Usuario) -> None:
     )
     db.add(fila)
     db.commit()
+    if usuario.cuenta_de is not None:
+        _avisar_cuenta_existente(db, usuario.cuenta_de, tareas)
+        return
+    minutos = int(VIGENCIA_CODIGO.total_seconds() // 60)
+    if tareas is not None:
+        tareas.add_task(_sin_esperar, "enviar_codigo", usuario.email, usuario.nombre, codigo, minutos)
+        return
     try:
-        correo.enviar_codigo(usuario.email, usuario.nombre, codigo, int(VIGENCIA_CODIGO.total_seconds() // 60))
+        correo.enviar_codigo(usuario.email, usuario.nombre, codigo, minutos)
     except correo.ErrorCorreo:
         fila.usado_en = ahora()  # nunca llegó: no sirve ni frena el próximo pedido (sí cuenta para el límite)
         db.commit()
         raise ErrorCuenta(MENSAJE_ENVIO) from None
 
 
-def iniciar_segundo_factor(db: Session, usuario: Usuario) -> str | None:
+def iniciar_segundo_factor(db: Session, usuario: Usuario, tareas: BackgroundTasks | None = None) -> str | None:
     """Al entrar con contraseña o con Google: manda el código. Devuelve un aviso (clave) si no se pudo.
 
     Si hace menos de un minuto ya se mandó uno que sigue vigente, no se manda otro: vale ese.
     """
     try:
-        enviar_codigo(db, usuario)
+        enviar_codigo(db, usuario, tareas)
     except EsperaReenvio:
         return None
     except LimiteEnvios:
@@ -243,7 +314,9 @@ def verificar_codigo(db: Session, usuario: Usuario, codigo: str) -> None:
         # Sin un código vigente no hay nada que adivinar: no cuenta como intento fallido.
         raise ErrorCuenta(MENSAJE_SIN_CODIGO)
     limpio = "".join(codigo.split())
-    if len(limpio) == 6 and limpio.isdigit() and seguridad.codigo_email_coincide(vigente.hash, usuario.id, limpio):
+    # Un registro repetido (cuenta_de_id) cuenta los intentos igual, pero ningún código lo completa.
+    if (usuario.cuenta_de_id is None and len(limpio) == 6 and limpio.isdigit()
+            and seguridad.codigo_email_coincide(vigente.hash, usuario.id, limpio)):
         vigente.usado_en = momento
         db.commit()
         return

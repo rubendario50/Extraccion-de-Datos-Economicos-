@@ -3,8 +3,10 @@
 from pathlib import Path
 
 from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.exception_handlers import http_exception_handler
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.sessions import SessionMiddleware
 
 from app import __version__
@@ -83,11 +85,31 @@ async def csrf_invalido(request: Request, exc: ErrorCsrf):
     return renderizar(request, "error.html", {"titulo": "No se pudo enviar el formulario", "mensaje": exc.detail}, 403)
 
 
+@app.exception_handler(StarletteHTTPException)
+async def error_http(request: Request, exc: StarletteHTTPException):
+    """Una página que no existe se muestra como página (en español); la API sigue respondiendo JSON."""
+    if exc.status_code == 404 and not request.url.path.startswith("/api/"):
+        return renderizar(request, "error.html", {
+            "titulo": "No encontramos esa página",
+            "mensaje": "La dirección no existe o cambió. Revisá que esté bien escrita o volvé al inicio.",
+            "enlace": "/",
+            "texto_enlace": "Ir al inicio",
+        }, 404)
+    return await http_exception_handler(request, exc)
+
+
 app.mount("/static", StaticFiles(directory=DIR_ESTATICOS), name="static")
 app.include_router(rutas.router)
 app.include_router(google.router)
 app.include_router(panel.router)
 app.include_router(series.router)
+
+
+@app.get("/favicon.ico", include_in_schema=False)
+def favicon() -> FileResponse:
+    """Los navegadores piden /favicon.ico aunque la página enlace el SVG."""
+    return FileResponse(DIR_ESTATICOS / "favicon.svg", media_type="image/svg+xml",
+                        headers={"Cache-Control": "public, max-age=86400"})
 
 
 @app.get("/salud")

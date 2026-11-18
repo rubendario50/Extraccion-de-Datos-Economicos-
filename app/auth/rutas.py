@@ -1,6 +1,6 @@
 """Páginas de acceso: registro, login, doble factor y salida."""
 
-from fastapi import APIRouter, Depends, Form, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, Form, Request
 from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 
@@ -40,9 +40,14 @@ def _segun_sesion(sesion: Sesion | None) -> RedirectResponse | None:
     return _redirigir("/" if sesion.mfa_ok else RUTA_SEGUNDO_FACTOR)
 
 
-def _al_segundo_factor(db: Session, usuario: Usuario, request: Request) -> RedirectResponse:
-    """Abre la sesión pendiente, manda el código al email y lleva a la pantalla para escribirlo."""
-    aviso = cuentas.iniciar_segundo_factor(db, usuario)
+def _al_segundo_factor(
+    db: Session, usuario: Usuario, request: Request, tareas: BackgroundTasks | None = None
+) -> RedirectResponse:
+    """Abre la sesión pendiente, manda el código al email y lleva a la pantalla para escribirlo.
+
+    Con `tareas` (al registrarse), el correo sale después de responder.
+    """
+    aviso = cuentas.iniciar_segundo_factor(db, usuario, tareas)
     respuesta = _redirigir(RUTA_SEGUNDO_FACTOR + (f"?aviso={aviso}" if aviso else ""))
     crear_sesion(db, usuario, request, respuesta)
     return respuesta
@@ -89,6 +94,7 @@ def ver_registro(request: Request, sesion: Sesion | None = Depends(sesion_actual
 @router.post("/registro")
 def registrarse(
     request: Request,
+    tareas: BackgroundTasks,
     nombre: str = Form(""),
     email: str = Form(""),
     password: str = Form(""),
@@ -105,8 +111,11 @@ def registrarse(
             {"errores": errores, "datos": {"nombre": nombre.strip(), "email": email.strip()}, "portada": datos_portada(db)},
             estado=400,
         )
-    usuario = cuentas.registrar(db, datos)
-    return _al_segundo_factor(db, usuario, request)
+    # Exista o no una cuenta con ese email, se recorre el mismo camino (ver `cuentas.registrar_repetido`) y
+    # el correo sale después de responder: ni la respuesta ni lo que tarda dicen si el email ya tenía cuenta.
+    existente = cuentas.buscar_por_email(db, email)
+    usuario = cuentas.registrar(db, datos) if existente is None else cuentas.registrar_repetido(db, datos, existente)
+    return _al_segundo_factor(db, usuario, request, tareas)
 
 
 # --- Doble factor: código por email ---
@@ -153,6 +162,7 @@ def verificar(
 @router.post("/2fa/reenviar")
 def reenviar(
     request: Request,
+    tareas: BackgroundTasks,
     csrf: str = Form(""),
     sesion: Sesion = Depends(sesion_pendiente),
     db: Session = Depends(get_db),
@@ -160,8 +170,11 @@ def reenviar(
     verificar_csrf(request, csrf)
     if sesion.mfa_ok:
         return _redirigir("/")
+    # Una cuenta que nunca completó el doble factor (recién registrada, o un registro repetido) recibe el
+    # correo después de responder, igual que al registrarse, para que los dos casos no se distingan.
+    usuario = sesion.usuario
     try:
-        cuentas.enviar_codigo(db, sesion.usuario)
+        cuentas.enviar_codigo(db, usuario, tareas if usuario.ultimo_ingreso is None else None)
     except (cuentas.EsperaReenvio, cuentas.LimiteEnvios) as e:
         return _pantalla_codigo(request, sesion, estado=429, error=str(e))
     except cuentas.ErrorCuenta as e:

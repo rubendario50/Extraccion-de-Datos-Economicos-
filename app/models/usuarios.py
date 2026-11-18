@@ -25,6 +25,19 @@ class Usuario(Base):
     bloqueado_hasta: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     creado_en: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=ahora)
     ultimo_ingreso: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Último aviso de «ya tenés cuenta» (alguien se quiso registrar con este email): uno cada 15 minutos.
+    ultimo_aviso_registro: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Registro con el email de una cuenta que ya existía: no se le dice a nadie (sería revelar la cuenta),
+    # así que se crea este usuario «pendiente» que recorre los mismos pasos que un registro nuevo (sesión
+    # pendiente, códigos, intentos y bloqueo) pero que ningún código completa. Su `email` es aleatorio
+    # (no se puede ingresar con él) y `cuenta_de_id` apunta a la cuenta real, que no se toca.
+    cuenta_de_id: Mapped[int | None] = mapped_column(ForeignKey("usuario.id", ondelete="CASCADE"), index=True)
+    cuenta_de: Mapped["Usuario | None"] = relationship(remote_side=[id])
+
+    @property
+    def email_visible(self) -> str:
+        """El email que escribió la persona (en un registro repetido, el de la cuenta real)."""
+        return self.cuenta_de.email if self.cuenta_de is not None else self.email
 
 
 class CodigoEmail(Base):

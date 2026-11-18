@@ -202,6 +202,7 @@ En el panel, la ficha del grupo dice «grupo»; el encabezado de la tabla y el t
 ## Acceso y seguridad
 
 - Registro con nombre, email y contraseña (mínimo 12 caracteres, guardada con Argon2), o ingreso con Google.
+- El registro no revela si un email ya tiene cuenta: con un email en uso la pantalla se ve igual que con uno nuevo (pide el código), pero ningún código lo completa, y al dueño de la cuenta le llega un correo "Ya tenés una cuenta" (como máximo uno cada 15 minutos). Los correos del registro salen en segundo plano; si el servidor de correo falla, el error queda solo en el registro de la app (`podman-compose logs app`).
 - Doble factor obligatorio para todos, también para los que entran con Google: después de la contraseña (o de Google) se manda un código de 6 dígitos al email de la cuenta. Vence a los 10 minutos, sirve una sola vez y al pedir otro el anterior deja de valer. En la base solo se guarda su hash. Ver "Correo (código de ingreso)" para configurar el envío.
 - "Reenviar código" manda uno nuevo; hay que esperar 60 segundos entre envíos y se mandan hasta 5 por hora por cuenta.
 - Tras 5 intentos fallidos (contraseña o código) la cuenta queda bloqueada 15 minutos.

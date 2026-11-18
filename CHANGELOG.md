@@ -23,6 +23,47 @@ y el proyecto usa [versionado semántico](https://semver.org/lang/es/).
   sin Arabia Saudita, OCDE 38) y la regla de cobertura completa, que deja años
   vacíos (por ejemplo América Latina sin Cuba en el Banco Mundial desde 2021).
 
+## [0.3.5] - 2026-11-18
+
+Avisos más claros en el panel, página de error propia, ícono del sitio y un registro que ya no
+revela qué emails tienen cuenta.
+
+### Seguridad
+
+- **El registro ya no revela si un email tiene cuenta.** Si alguien se registra con un email que ya
+  está en uso, ve exactamente lo mismo que con uno nuevo: la pantalla del código, el bloqueo a los
+  5 intentos y los mismos límites de reenvío, pero ningún código completa ese registro. Al dueño de
+  la cuenta le llega en cambio un correo "Ya tenés una cuenta" (como máximo uno cada 15 minutos),
+  y su cuenta no cambia. Los registros pendientes que quedan así se descartan pasado un día.
+- Los correos del registro se mandan en segundo plano, así que la respuesta tarda lo mismo con
+  cualquier email. Si el servidor de correo falla durante el registro, el error queda solo en el
+  registro de la app; la pantalla ya no muestra el aviso de envío fallido (`?aviso=envio`).
+
+### Agregado
+
+- **Aviso al pasar de 8 series en el panel.** Al intentar agregar una novena serie se muestra un
+  aviso, y si un enlace trae más de 8 se toman las primeras 8 y se avisa.
+- **Aviso de año base.** Si el año base del enlace no es válido, está vacío o no tiene datos, el
+  panel avisa qué año usó en su lugar; el aviso se oculta al cambiar el índice.
+- **Página "No encontrada" en español** para direcciones que no existen y archivos faltantes del
+  sitio. La API (`/api/...`) sigue respondiendo en JSON.
+- **Ícono del sitio** (el logo) en la pestaña del navegador en todas las páginas; `/favicon.ico`
+  también responde.
+
+### Cambiado
+
+- Un enlace con un año base inválido (por ejemplo `base=abc`) ahora deja el índice base 100
+  encendido con el año por defecto; antes lo apagaba.
+
+### Para actualizar
+
+1. Reconstruir y recrear el contenedor: `podman-compose up -d --build --force-recreate`. Al
+   arrancar aplica la migración 0008 (`alembic upgrade head`), que agrega a la tabla `usuario` las
+   columnas `ultimo_aviso_registro` y `cuenta_de_id` (referencia a otro usuario, con borrado en
+   cascada).
+2. Nota técnica: los registros pendientes viven en la tabla `usuario` con `cuenta_de_id` cargado;
+   cualquier listado de usuarios que se haga a futuro debe filtrar `cuenta_de_id IS NULL`.
+
 ## [0.3.4] - 2026-11-18
 
 FRED se carga sin necesidad de clave.

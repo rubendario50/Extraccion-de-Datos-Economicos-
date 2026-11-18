@@ -37,6 +37,7 @@
     usarBase: $("usar-base"),
     anioBase: $("anio-base"),
     errorAnios: $("error-anios"),
+    aviso: $("aviso-panel"),
     titulo: $("titulo-serie"),
     unidad: $("unidad-serie"),
     faltantes: $("nota-faltantes"),
@@ -141,6 +142,16 @@
     }
   }
 
+  // Avisos breves sobre lo que el panel corrigió o no pudo hacer, por tema ("limite", "url-series", "base").
+  const avisos = new Map();
+
+  function avisar(tema, texto) {
+    if (texto) avisos.set(tema, texto);
+    else avisos.delete(tema);
+    el.aviso.textContent = [...avisos.values()].join(" ");
+    el.aviso.hidden = !avisos.size;
+  }
+
   function indicadorActual() {
     return porCodigoIndicador.get(estado.indicador);
   }
@@ -210,15 +221,23 @@
     if (q.get("fuente")) estado.fuente = q.get("fuente").trim().toUpperCase();
     const paises = (q.get("paises") || "").split(",").filter((c) => porCodigoPais.has(c));
     const grupos = (q.get("grupos") || "").split(",").filter((c) => porCodigoGrupo.has(c)).map((c) => PREFIJO_GRUPO + c);
-    const elegidos = [...paises, ...grupos];
+    const elegidos = [...new Set([...paises, ...grupos])];
+    if (elegidos.length > MAX_SERIES) {
+      avisar("url-series", `La dirección traía ${elegidos.length} series y se pueden comparar hasta ${MAX_SERIES}: se tomaron las primeras ${MAX_SERIES}.`);
+    }
     estado.paises = (elegidos.length ? elegidos : datos.por_defecto.filter((c) => porCodigoPais.has(c))).slice(0, MAX_SERIES);
     estado.paises.forEach(asignarRanura);
     const num = (n) => (q.has(n) && /^\d{4}$/.test(q.get(n)) ? Number(q.get(n)) : null);
     estado.desde = num("desde");
     estado.hasta = num("hasta");
     estado.base = num("base");
-    estado.usarBase = estado.base != null;
+    // Un año base que no es un año (?base=abc) igual pide el índice: prepararAnios usa uno válido y avisa.
+    estado.usarBase = q.has("base");
+    baseDeLaUrl = q.has("base") ? q.get("base") : null;
   }
+
+  // El año base tal cual vino en la URL: si no sirve, al preparar los años se avisa cuál se usó.
+  let baseDeLaUrl = null;
 
   function escribirUrl() {
     const q = new URLSearchParams();
@@ -271,6 +290,16 @@
     estado.desde = acotar(estado.desde ?? Math.max(min, ANIO_INICIAL_PREFERIDO), min, max);
     estado.hasta = acotar(estado.hasta ?? max, min, max);
     estado.base = acotar(estado.base ?? acotar(2000, min, max), min, max);
+    if (baseDeLaUrl != null) {
+      if (baseDeLaUrl !== String(estado.base)) {
+        const pedido = baseDeLaUrl.trim().slice(0, 12);
+        const motivo = !pedido
+          ? "No se indicó el año base"
+          : `El año base ${pedido} ${/^\d{4}$/.test(pedido) ? "no tiene datos en esta fuente" : "no es un año válido"}`;
+        avisar("base", `${motivo}: se usó ${estado.base} en su lugar.`);
+      }
+      baseDeLaUrl = null;
+    }
     el.desde.disabled = el.hasta.disabled = false;
     opcionesAnios(el.desde, min, max, estado.desde);
     opcionesAnios(el.hasta, min, max, estado.hasta);
@@ -361,6 +390,7 @@
     activa = resultados.length && el.buscar.value.trim() ? 0 : -1;
     el.opciones.replaceChildren();
     if (estado.paises.length >= MAX_SERIES) {
+      avisoLimite();
       el.opciones.innerHTML = `<li class="opcion-vacia" role="presentation">Ya elegiste ${MAX_SERIES}. Quitá uno para agregar otro.</li>`;
     } else if (!resultados.length) {
       el.opciones.innerHTML = '<li class="opcion-vacia" role="presentation">No hay países ni grupos con datos que coincidan.</li>';
@@ -407,8 +437,16 @@
     }
   }
 
+  function avisoLimite() {
+    avisar("limite", `Se pueden comparar hasta ${MAX_SERIES} series a la vez. Quitá una para agregar otra.`);
+  }
+
   function agregarPais(codigo) {
-    if (estado.paises.includes(codigo) || estado.paises.length >= MAX_SERIES) return;
+    if (estado.paises.includes(codigo)) return;
+    if (estado.paises.length >= MAX_SERIES) {
+      avisoLimite();
+      return;
+    }
     estado.paises.push(codigo);
     asignarRanura(codigo);
     el.buscar.value = "";
@@ -421,6 +459,10 @@
 
   function quitarPais(codigo) {
     estado.paises = estado.paises.filter((c) => c !== codigo);
+    if (estado.paises.length < MAX_SERIES) {
+      avisar("limite", null);
+      avisar("url-series", null);
+    }
     ranuras.delete(codigo);
     ocultas.delete(codigo);
     pintarFichas();
@@ -489,9 +531,14 @@
   el.usarBase.addEventListener("change", () => {
     estado.usarBase = el.usarBase.checked;
     el.anioBase.disabled = !estado.usarBase;
+    avisar("base", null); // al prender o apagar el índice, el aviso sobre el año de la URL ya no corresponde
     pedirSeries();
   });
-  el.anioBase.addEventListener("change", () => { estado.base = Number(el.anioBase.value); pedirSeries(); });
+  el.anioBase.addEventListener("change", () => {
+    estado.base = Number(el.anioBase.value);
+    avisar("base", null);
+    pedirSeries();
+  });
   el.reintentar.addEventListener("click", () => pedirSeries());
 
   // ---------- Estados de la gráfica ----------

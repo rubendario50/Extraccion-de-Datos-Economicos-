@@ -39,15 +39,21 @@ def ingresar(cliente, email="ana@example.com", password=PASSWORD):
 
 @dataclass
 class Buzon:
-    """Envío de correo falso: guarda los códigos en lugar de mandarlos. Con `falla=True` simula un error SMTP."""
+    """Envío de correo falso: guarda los códigos (y los avisos) en lugar de mandarlos. Con `falla=True` simula un error SMTP."""
 
     enviados: list[dict] = field(default_factory=list)
+    avisos: list[dict] = field(default_factory=list)  # «ya tenés cuenta», al registrarse con un email existente
     falla: bool = False
 
     def enviar_codigo(self, destino: str, nombre: str, codigo: str, minutos: int) -> None:
         if self.falla:
             raise ErrorCorreo("SMTP simulado caído")
         self.enviados.append({"destino": destino, "nombre": nombre, "codigo": codigo, "minutos": minutos})
+
+    def enviar_aviso_cuenta_existente(self, destino: str, nombre: str) -> None:
+        if self.falla:
+            raise ErrorCorreo("SMTP simulado caído")
+        self.avisos.append({"destino": destino, "nombre": nombre})
 
     def ultimo(self, destino: str | None = None) -> str:
         """El último código mandado (a `destino`, si se indica)."""

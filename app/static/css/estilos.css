@@ -799,7 +799,8 @@ input::placeholder { color: var(--tinta-3); opacity: 1; }
 .campo-base legend { padding: 0; margin-bottom: 0.375rem; }
 .base-fila { display: flex; align-items: center; gap: var(--e-3); }
 .base-fila select { width: 6.5rem; }
-.error-anios { grid-column: 1 / -1; }
+.error-anios, .aviso-panel { grid-column: 1 / -1; }
+.aviso-panel { padding: var(--e-2) var(--e-3); }
 
 /* Selector de países */
 .selector-paises {

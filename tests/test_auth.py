@@ -6,6 +6,7 @@ from sqlalchemy import select
 
 from app.auth import correo, cuentas, seguridad
 from app.auth.correo import enviar_codigo as enviar_real  # el de verdad: el buzón falso lo reemplaza en cada test
+from app.auth.correo import enviar_aviso_cuenta_existente as aviso_real
 from app.auth.dependencias import requiere_admin
 from app.auth.sesiones import COOKIE_SESION, con_zona
 from app.config import get_settings
@@ -61,13 +62,154 @@ def test_registro_confirmacion_distinta(cliente_web, sesion_con_semillas):
     assert usuario(sesion_con_semillas) is None
 
 
-def test_registro_email_repetido(cliente_web, sesion_con_semillas):
+def _pantalla_tras_registro(cliente, buzon, email):
+    """Registra `email` en un navegador limpio y devuelve la redirección y la pantalla del código (sin el email)."""
+    cliente.cookies.clear()
+    r = registrar(cliente, email=email)
+    assert r.status_code == 303 and cliente.cookies.get(COOKIE_SESION)
+    pagina = cliente.get(r.headers["location"])
+    assert pagina.status_code == 200
+    return r.headers["location"], sin_ocultos(pagina.text).replace(email.strip().lower(), "EMAIL")
+
+
+def test_registro_email_repetido_no_revela_que_existe(cliente_web, sesion_con_semillas, buzon):
+    registrar(cliente_web)
+    nueva = _pantalla_tras_registro(cliente_web, buzon, "beto@example.com")
+    repetida = _pantalla_tras_registro(cliente_web, buzon, "ANA@example.com")
+    # La misma respuesta exista o no la cuenta, y la pantalla no afirma que el código salió.
+    assert nueva == repetida
+    assert "Ya hay una cuenta" not in repetida[1]
+    assert "Si <strong>EMAIL</strong> es válido, te mandamos un código" in repetida[1]
+    # No se crea otra cuenta con ese email: el registro repetido queda como un usuario pendiente con un
+    # email aleatorio que apunta a la cuenta real. Al dueño le llega un aviso en lugar del código.
+    ana = usuario(sesion_con_semillas)
+    reales = sesion_con_semillas.scalars(select(Usuario).where(Usuario.cuenta_de_id.is_(None))).all()
+    assert sorted(u.email for u in reales) == ["ana@example.com", "beto@example.com"]
+    (pendiente,) = sesion_con_semillas.scalars(select(Usuario).where(Usuario.cuenta_de_id.is_not(None))).all()
+    assert pendiente.cuenta_de_id == ana.id and pendiente.email.endswith("@registro.invalid")
+    assert pendiente.password_hash is None and pendiente.email_visible == "ana@example.com"
+    assert [m["destino"] for m in buzon.enviados] == ["ana@example.com", "beto@example.com"]
+    assert buzon.avisos == [{"destino": "ana@example.com", "nombre": "Ana Pérez"}]
+    assert ana.password_hash and ana.ultimo_aviso_registro is not None
+
+
+def test_registro_email_repetido_ningun_codigo_entra(cliente_web, sesion_con_semillas, buzon):
+    registrar(cliente_web)
+    completar_2fa(cliente_web, buzon)  # el dueño tiene un código usado; probemos con el último que le llegó
+    cliente_web.cookies.clear()
+    registrar(cliente_web)
+    r = verificar(cliente_web, buzon.ultimo())
+    assert r.status_code == 400 and "El código no es correcto" in r.text
+    assert cliente_web.get("/").headers["location"] == "/2fa/verificar"  # sigue pendiente, como uno nuevo
+    # El dueño sigue sin intentos fallidos ni bloqueo por culpa de otro.
+    u = usuario(sesion_con_semillas)
+    sesion_con_semillas.refresh(u)
+    assert u.intentos_2fa == 0 and u.bloqueado_hasta is None
+
+
+def test_registro_email_repetido_reenviar_espera_igual_y_no_manda_nada(cliente_web, sesion_con_semillas, buzon):
     registrar(cliente_web)
     cliente_web.cookies.clear()
-    r = registrar(cliente_web, email="ANA@example.com")
-    assert r.status_code == 400
-    assert "Ya hay una cuenta con ese email" in r.text
-    assert len(sesion_con_semillas.scalars(select(Usuario)).all()) == 1
+    registrar(cliente_web)
+    r = reenviar(cliente_web)
+    assert r.status_code == 429 and "antes de pedir otro código" in r.text
+    assert len(buzon.enviados) == 1 and len(buzon.avisos) == 1
+
+
+def test_registro_email_repetido_y_salir(cliente_web, sesion_con_semillas, buzon):
+    registrar(cliente_web)
+    cliente_web.cookies.clear()
+    registrar(cliente_web)
+    pagina = cliente_web.get("/2fa/verificar")
+    r = cliente_web.post("/salir", data={"csrf": csrf_de(pagina.text)})
+    assert r.headers["location"] == "/login?aviso=salida"
+    assert cliente_web.get("/2fa/verificar").headers["location"] == "/login"
+
+
+def test_registro_email_repetido_con_smtp_caido_responde_igual(cliente_web, sesion_con_semillas, buzon):
+    registrar(cliente_web, email="beto@example.com")
+    buzon.falla = True
+    cliente_web.cookies.clear()
+    assert registrar(cliente_web, email="carla@example.com").headers["location"] == "/2fa/verificar"
+    cliente_web.cookies.clear()
+    assert registrar(cliente_web, email="beto@example.com").headers["location"] == "/2fa/verificar"
+
+
+def test_registro_repetido_borra_los_pendientes_de_mas_de_un_dia(cliente_web, sesion_con_semillas, buzon):
+    registrar(cliente_web)
+    cliente_web.cookies.clear()
+    registrar(cliente_web)
+    viejo = sesion_con_semillas.scalar(select(Usuario).where(Usuario.cuenta_de_id.is_not(None)))
+    viejo.creado_en = con_zona(viejo.creado_en) - timedelta(days=1, minutes=1)
+    sesion_con_semillas.commit()
+    cliente_web.cookies.clear()
+    registrar(cliente_web)
+    pendientes = sesion_con_semillas.scalars(select(Usuario).where(Usuario.cuenta_de_id.is_not(None))).all()
+    assert len(pendientes) == 1 and con_zona(pendientes[0].creado_en) > con_zona(viejo.creado_en) + timedelta(days=1)
+    # Con el viejo se fueron su sesión y su código: quedan solo los del nuevo (SQLite puede reusar el id).
+    de_pendientes = [x for x in sesion_con_semillas.scalars(select(Sesion)) if x.usuario.cuenta_de_id is not None]
+    assert len(de_pendientes) == 1 and de_pendientes[0].usuario_id == pendientes[0].id
+    codigos = sesion_con_semillas.scalars(select(CodigoEmail).where(CodigoEmail.usuario_id == pendientes[0].id)).all()
+    assert len(codigos) == 1
+
+
+def test_salir_de_un_registro_repetido_muestra_el_email_escrito(cliente_web, sesion_con_semillas, buzon):
+    registrar(cliente_web)
+    cliente_web.cookies.clear()
+    registrar(cliente_web)
+    pagina = cliente_web.get("/salir").text
+    assert "(ana@example.com)" in pagina and "registro.invalid" not in pagina
+
+
+def test_registro_no_espera_al_smtp(cliente_web, sesion_con_semillas, buzon, monkeypatch):
+    """El correo del registro (código o aviso) sale después de mandar la respuesta, en los dos casos."""
+    import asyncio
+    from urllib.parse import urlencode
+
+    from app.main import app as aplicacion
+
+    registrar(cliente_web)
+
+    def respuesta_antes_que_el_correo(email):
+        cliente_web.cookies.clear()
+        token = csrf_de(cliente_web.get("/registro").text)
+        cookies = "; ".join(f"{k}={v}" for k, v in cliente_web.cookies.items())
+        cuerpo = urlencode({"nombre": "Ana Pérez", "email": email, "password": PASSWORD,
+                            "confirmacion": PASSWORD, "csrf": token}).encode()
+        orden = []
+        monkeypatch.setattr(correo, "enviar_codigo", lambda *a: orden.append("correo"))
+        monkeypatch.setattr(correo, "enviar_aviso_cuenta_existente", lambda *a: orden.append("correo"))
+        scope = {
+            "type": "http", "asgi": {"version": "3.0"}, "http_version": "1.1", "method": "POST",
+            "scheme": "http", "path": "/registro", "raw_path": b"/registro", "query_string": b"",
+            "root_path": "", "server": ("testserver", 80), "client": ("127.0.0.1", 1234),
+            "headers": [(b"host", b"testserver"), (b"content-type", b"application/x-www-form-urlencoded"),
+                        (b"content-length", str(len(cuerpo)).encode()), (b"cookie", cookies.encode())],
+        }
+        pedidos = [{"type": "http.request", "body": cuerpo, "more_body": False}]
+
+        async def recibir():
+            return pedidos.pop(0) if pedidos else {"type": "http.disconnect"}
+
+        async def enviar(mensaje):
+            if mensaje["type"] == "http.response.start":
+                orden.append(mensaje["status"])
+
+        asyncio.run(aplicacion(scope, recibir, enviar))
+        return orden
+
+    assert respuesta_antes_que_el_correo("beto@example.com") == [303, "correo"]
+    assert respuesta_antes_que_el_correo("ana@example.com") == [303, "correo"]
+
+
+def test_aviso_de_cuenta_existente_por_smtp(smtp):
+    correo.enviar_aviso_cuenta_existente("ana@example.com", "<b>Ana</b>")
+    (mensaje,) = smtp.instancias[0].mensajes
+    assert mensaje["Subject"] == "Ya tenés una cuenta - Datos Económicos" and mensaje["To"] == "ana@example.com"
+    texto = mensaje.get_body(("plain",)).get_content()
+    assert "ya tenés una" in texto and "http://localhost:8000/login" in texto and "Si no fuiste vos" in texto
+    html = mensaje.get_body(("html",)).get_content()
+    assert "<b>Ana</b>" not in html and "&lt;b&gt;Ana&lt;/b&gt;" in html
 
 
 def test_registro_admin(cliente_web, sesion_con_semillas, monkeypatch):
@@ -415,6 +557,7 @@ def smtp(monkeypatch, buzon):
     """El envío real (sin el buzón falso) contra un servidor SMTP simulado y con Gmail configurado."""
     SmtpFalso.instancias, SmtpFalso.error = [], None
     monkeypatch.setattr(correo, "enviar_codigo", enviar_real)
+    monkeypatch.setattr(correo, "enviar_aviso_cuenta_existente", aviso_real)
     monkeypatch.setattr(correo.smtplib, "SMTP", SmtpFalso)
     ajustes = get_settings()
     monkeypatch.setattr(ajustes, "smtp_user", "datos.economicos@gmail.com")
@@ -459,15 +602,26 @@ def test_falla_smtp_lanza_error_y_lo_registra(smtp, caplog):
     assert "abcd efgh ijkl mnop" not in caplog.text  # la contraseña nunca va al registro
 
 
-def test_falla_smtp_en_el_login(smtp, cliente_web, sesion_con_semillas):
+def test_falla_smtp_en_el_login(smtp, cliente_web, sesion_con_semillas, caplog):
     import smtplib
 
+    from app.auth.sesiones import ahora
+
+    sesion_con_semillas.add(Usuario(email="ana@example.com", nombre="Ana", ultimo_ingreso=ahora(),
+                                    password_hash=seguridad.hashear_password(PASSWORD)))
+    sesion_con_semillas.commit()
     smtp.error = smtplib.SMTPAuthenticationError(535, b"Username and Password not accepted")
-    r = registrar(cliente_web)
+    r = ingresar(cliente_web)
     assert r.headers["location"] == "/2fa/verificar?aviso=envio"
     pagina = sin_ocultos(cliente_web.get(r.headers["location"]).text)
     assert "No pudimos mandarte el código por email" in pagina
     assert "Username and Password not accepted" not in pagina and "535" not in pagina
+    # Al registrarse, el correo sale después de responder: el error no se ve, pero queda en el registro.
+    cliente_web.cookies.clear()
+    with caplog.at_level("ERROR", logger="app.auth.correo"):
+        r = registrar(cliente_web, email="beto@example.com")
+    assert r.headers["location"] == "/2fa/verificar"
+    assert "No se pudo mandar el código o el aviso a beto@example.com" in caplog.text
 
 
 def test_sin_smtp_configurado_el_codigo_va_al_registro(monkeypatch, caplog, cliente_web, sesion_con_semillas):
@@ -544,11 +698,13 @@ def test_nombre_con_html_se_escapa(cliente_web, sesion_con_semillas, buzon):
     assert '"><script>x()' not in r.text
 
 
-def test_registro_de_email_que_ya_entro_con_google(cliente_web, sesion_con_semillas):
+def test_registro_de_email_que_ya_entro_con_google(cliente_web, sesion_con_semillas, buzon):
     sesion_con_semillas.add(Usuario(email="ana@gmail.com", nombre="Ana Google", google_sub="123"))
     sesion_con_semillas.commit()
     r = registrar(cliente_web, email=" ANA@gmail.com")
-    assert r.status_code == 400 and "Ya hay una cuenta con ese email" in r.text
+    assert r.status_code == 303 and r.headers["location"] == "/2fa/verificar"
+    assert buzon.avisos == [{"destino": "ana@gmail.com", "nombre": "Ana Google"}] and buzon.enviados == []
+    cliente_web.cookies.clear()
     u = usuario(sesion_con_semillas, "ana@gmail.com")
     assert u.password_hash is None  # no se le agrega una contraseña a la cuenta de Google
     # Y con contraseña no se puede entrar a esa cuenta.
@@ -571,4 +727,70 @@ def test_sesion_pendiente_dura_15_minutos(cliente_web, sesion_con_semillas):
     # Vencida, la pantalla del código manda al login.
     from tests.ayudas import vencer
     vencer(sesion_con_semillas, s)
+    cliente_web.cookies.delete("oauth")  # la cookie firmada del registro vence antes (10 minutos)
     assert cliente_web.get("/2fa/verificar").headers["location"] == "/login"
+
+
+# --- Límite de avisos de cuenta existente ---
+
+def test_avisos_de_cuenta_existente_como_maximo_uno_cada_15_minutos(cliente_web, sesion_con_semillas, buzon):
+    registrar(cliente_web)
+    respuestas = []
+    for _ in range(3):
+        cliente_web.cookies.clear()
+        r = registrar(cliente_web)
+        respuestas.append((r.status_code, r.headers["location"]))
+    # La respuesta es siempre la misma, pero el aviso sale una sola vez.
+    assert respuestas == [(303, "/2fa/verificar")] * 3
+    assert len(buzon.avisos) == 1
+    u = usuario(sesion_con_semillas)
+    assert u.ultimo_aviso_registro is not None
+    # Pasados 15 minutos, sí se manda otro.
+    u.ultimo_aviso_registro = con_zona(u.ultimo_aviso_registro) - timedelta(minutes=15)
+    sesion_con_semillas.commit()
+    cliente_web.cookies.clear()
+    registrar(cliente_web)
+    assert len(buzon.avisos) == 2
+
+
+def test_aviso_que_falla_no_cambia_la_respuesta(cliente_web, sesion_con_semillas, buzon, caplog):
+    registrar(cliente_web)
+    buzon.falla = True
+    cliente_web.cookies.clear()
+    r = registrar(cliente_web)
+    assert r.status_code == 303 and r.headers["location"] == "/2fa/verificar"
+    assert buzon.avisos == []
+
+
+
+# --- Tester: el registro con email existente no debe distinguirse navegando ni equivocándose de código ---
+
+def _navegacion_tras_registro(cliente, email):
+    cliente.cookies.clear()
+    registrar(cliente, email=email)
+    return {p: (r.status_code, r.headers.get("location")) for p in ("/", "/login", "/registro")
+            for r in [cliente.get(p)]}
+
+
+def test_registro_repetido_misma_navegacion_que_uno_nuevo(cliente_web, sesion_con_semillas, buzon):
+    registrar(cliente_web)
+    nueva = _navegacion_tras_registro(cliente_web, "beto@example.com")
+    repetida = _navegacion_tras_registro(cliente_web, "ana@example.com")
+    # Si / (o /login, /registro) lleva a un lugar distinto, se sabe si el email ya tenía cuenta.
+    assert nueva == repetida
+
+
+def _errores_tras_cinco_codigos_malos(cliente, email):
+    cliente.cookies.clear()
+    registrar(cliente, email=email)
+    for _ in range(5):
+        r = verificar(cliente, "000000")
+    return r.status_code, "bloqueamos" in r.text
+
+
+def test_registro_repetido_mismo_bloqueo_que_uno_nuevo(cliente_web, sesion_con_semillas, buzon):
+    registrar(cliente_web)
+    nueva = _errores_tras_cinco_codigos_malos(cliente_web, "beto@example.com")
+    repetida = _errores_tras_cinco_codigos_malos(cliente_web, "ana@example.com")
+    # Uno nuevo se bloquea a los 5 intentos; si el señuelo nunca se bloquea, se distingue.
+    assert nueva == repetida

@@ -109,3 +109,35 @@ def test_migracion_0006_codigo_por_email(tmp_path):
     with engine.connect() as c:
         assert c.execute(text("SELECT email, totp_activo FROM usuario")).all() == [("ana@example.com", 0)]
     engine.dispose()
+
+
+def test_migracion_0008_ultimo_aviso_registro(tmp_path):
+    """0008 agrega `usuario.ultimo_aviso_registro` y `cuenta_de_id` (vacías en los usuarios existentes); el downgrade las saca."""
+    from pathlib import Path
+
+    from alembic import command
+    from alembic.config import Config
+    from sqlalchemy import create_engine, text
+
+    url = f"sqlite:///{tmp_path / 'migracion.sqlite'}"
+    config = Config(str(Path(__file__).resolve().parents[1] / "alembic.ini"))
+    config.set_main_option("sqlalchemy.url", url)
+    command.upgrade(config, "0007")
+    engine = create_engine(url)
+    with engine.begin() as c:
+        c.execute(text(
+            "INSERT INTO usuario (email, nombre, rol, intentos_fallidos, intentos_2fa, creado_en) "
+            "VALUES ('ana@example.com', 'Ana', 'usuario', 0, 0, '2026-10-01')"
+        ))
+    command.upgrade(config, "0008")
+    with engine.connect() as c:
+        assert c.execute(text("SELECT email, ultimo_aviso_registro, cuenta_de_id FROM usuario")).all() == [
+            ("ana@example.com", None, None)
+        ]
+    insp = inspect(engine)
+    (fk,) = [f for f in insp.get_foreign_keys("usuario") if f["constrained_columns"] == ["cuenta_de_id"]]
+    assert fk["referred_table"] == "usuario" and fk["options"].get("ondelete") == "CASCADE"
+    command.downgrade(config, "0007")
+    columnas = {c["name"] for c in inspect(engine).get_columns("usuario")}
+    assert not {"ultimo_aviso_registro", "cuenta_de_id"} & columnas
+    engine.dispose()

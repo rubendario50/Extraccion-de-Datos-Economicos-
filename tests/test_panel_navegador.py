@@ -936,3 +936,79 @@ def test_buscador_se_cierra_al_elegir_con_enter_y_se_reabre(pagina):
     pagina.keyboard.press("Escape")
     pagina.keyboard.type("Est")
     assert pagina.locator("#opciones-paises").is_visible()
+
+
+# --- Avisos: más de 8 series y año base inválido ---
+
+NUEVE = "URY,ARG,BRA,CHL,PRY,USA,CHN,DEU,FRA"
+
+
+def fichas(pg):
+    return pg.locator("#fichas .ficha").evaluate_all("fs => fs.map((f) => f.dataset.codigo)")
+
+
+def test_url_con_mas_de_8_series_avisa_que_tomo_las_primeras(pagina):
+    pagina.goto(f"{BASE}/?indicador=PBI_USD_CORR&fuente=FMI_DM&paises={NUEVE}")
+    esperar_carga(pagina)
+    assert fichas(pagina) == NUEVE.split(",")[:8]
+    aviso = pagina.locator("#aviso-panel")
+    assert aviso.is_visible() and aviso.get_attribute("role") == "status"
+    assert "traía 9 series" in aviso.inner_text() and "se tomaron las primeras 8" in aviso.inner_text()
+    assert "FRA" not in pagina.url
+    # Al quitar una, el aviso ya no corresponde.
+    pagina.locator('#fichas .ficha-quitar[data-codigo="DEU"]').click()
+    assert aviso.is_hidden()
+
+
+def test_agregar_la_novena_serie_avisa_y_no_la_agrega(pagina):
+    ocho = "URY,ARG,BRA,CHL,PRY,CHN,DEU,FRA"  # sin USA, que tiene datos y se ofrece en el buscador
+    pagina.goto(f"{BASE}/?indicador=PBI_USD_CORR&fuente=FMI_DM&paises={ocho}")
+    esperar_carga(pagina)
+    aviso = pagina.locator("#aviso-panel")
+    assert aviso.is_hidden()
+    pagina.locator("#buscar-pais").click()
+    pagina.keyboard.type("Estados")
+    pagina.keyboard.press("Enter")
+    assert aviso.is_visible()
+    assert "hasta 8 series a la vez" in aviso.inner_text() and "Quitá una" in aviso.inner_text()
+    assert fichas(pagina) == ocho.split(",")
+    pagina.keyboard.press("Escape")
+    pagina.locator('#fichas .ficha-quitar[data-codigo="CHN"]').click()
+    assert aviso.is_hidden()
+    pagina.locator("#buscar-pais").fill("")
+    pagina.keyboard.type("Estados")
+    pagina.keyboard.press("Enter")
+    assert fichas(pagina)[-1] == "USA" and aviso.is_hidden()
+
+
+@pytest.mark.parametrize("base, motivo", [("1800", "no tiene datos en esta fuente"), ("abc", "no es un año válido")])
+def test_anio_base_invalido_en_la_url_avisa_cual_se_uso(pagina, base, motivo):
+    pagina.goto(f"{BASE}/?indicador=PBI_USD_CORR&fuente=FMI_DM&paises=ARG&base={base}")
+    esperar_carga(pagina)
+    usado = pagina.locator("#anio-base").input_value()
+    assert pagina.is_checked("#usar-base") and f"{usado} = 100" in pagina.inner_text("#unidad-serie")
+    aviso = pagina.locator("#aviso-panel")
+    assert aviso.is_visible()
+    assert aviso.inner_text() == f"El año base {base} {motivo}: se usó {usado} en su lugar."
+    assert f"base={usado}" in pagina.url
+    # Elegir otro año a mano lo saca.
+    pagina.select_option("#anio-base", "2010")
+    assert aviso.is_hidden()
+
+
+def test_anio_base_valido_no_avisa(pagina):
+    pagina.goto(f"{BASE}/?indicador=PBI_USD_CORR&fuente=FMI_DM&paises=URY,ARG&base=2000")
+    esperar_carga(pagina)
+    assert pagina.locator("#anio-base").input_value() == "2000"
+    assert pagina.locator("#aviso-panel").is_hidden()
+
+
+def test_anio_base_vacio_en_la_url_y_destildar_el_indice(pagina):
+    pagina.goto(f"{BASE}/?indicador=PBI_USD_CORR&fuente=FMI_DM&paises=ARG&base=")
+    esperar_carga(pagina)
+    usado = pagina.locator("#anio-base").input_value()
+    aviso = pagina.locator("#aviso-panel")
+    assert aviso.inner_text() == f"No se indicó el año base: se usó {usado} en su lugar."
+    # Al destildar «Índice base 100» el aviso sobre el año base ya no corresponde.
+    pagina.locator("label[for=usar-base]").click()
+    assert not pagina.is_checked("#usar-base") and aviso.is_hidden()

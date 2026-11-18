@@ -2,7 +2,11 @@
 {% block titulo %}Código de ingreso · Datos Económicos{% endblock %}
 {% block hoja %}
 <h1>Revisá tu correo</h1>
+{% if usuario.ultimo_ingreso is none %}{# recién registrada: no se afirma que el código salió (si el email ya tenía cuenta, no sale) #}
+<p class="intro">Si <strong>{{ usuario.email_visible }}</strong> es válido, te mandamos un código de 6 dígitos para activar la cuenta. Vence en {{ minutos }} minutos. Si ese email ya tenía una cuenta, en lugar del código te llega un aviso con los pasos para ingresar.</p>
+{% else %}
 <p class="intro">Te mandamos un código de 6 dígitos a <strong>{{ usuario.email }}</strong>. Vence en {{ minutos }} minutos.</p>
+{% endif %}
 {% include "_mensajes.html" %}
 <form method="post" action="/2fa/verificar" class="formulario" novalidate>
   <input type="hidden" name="csrf" value="{{ csrf }}">
