@@ -11,7 +11,7 @@ Plataforma de recopilación, análisis y difusión de datos económicos internac
 
 ## Estado
 
-Versión actual: 0.3.3 (ver `CHANGELOG.md`).
+Versión actual: 0.3.4 (ver `CHANGELOG.md`).
 
 Desde la 0.1: base de datos PostgreSQL en Podman, tabla maestra de países (`data/seed/paises.csv`), carga del PBI del FMI DataMapper (PBI en dólares corrientes y crecimiento real) y una web con login (contraseña o Google, doble factor obligatorio) donde se eligen indicador, países y años y se ven la gráfica y la tabla, con opción de índice base 100. La arquitectura está en `docs/arquitectura.md`.
 
@@ -21,7 +21,7 @@ Desde la 0.2.2, primeros datos de Uruguay: IPC mensual (INE, desde 1937), tasa d
 
 Desde la 0.3, grupos de países: Mercosur, G7, BRICS, Unión Europea (27), América Latina y el Caribe (CEPAL) y OCDE. En el panel se agregan junto a los países (sección "Grupos" del buscador) y se ven como una serie más, calculada con los datos de sus miembros en la fuente elegida (ver "Grupos de países").
 
-Cotizaciones de bolsa y materias primas desde FRED (cierre del día): S&P 500, Dow Jones, Nasdaq Composite, petróleo WTI y Brent y gas natural Henry Hub. En el panel van en el grupo "Bolsa y materias primas" del selector, con una sola serie y eje de fechas, como las de Uruguay. Necesitan una clave gratuita de FRED (ver "Clave de FRED").
+Cotizaciones de bolsa y materias primas desde FRED (cierre del día): S&P 500, Dow Jones, Nasdaq Composite, petróleo WTI y Brent y gas natural Henry Hub. En el panel van en el grupo "Bolsa y materias primas" del selector, con una sola serie y eje de fechas, como las de Uruguay. Se cargan sin clave, con la descarga CSV de FRED; la clave de la API es opcional (ver "Clave de FRED").
 
 ## Levantar el proyecto con Podman
 
@@ -87,13 +87,15 @@ Si `SMTP_USER` o `SMTP_PASSWORD` quedan vacíos (para probar en la PC), no se ma
 
 ### Clave de FRED (bolsa y materias primas)
 
-La API de FRED (Banco de la Reserva Federal de St. Louis) pide una clave gratuita:
+La clave es **opcional**. Si `FRED_API_KEY` está vacía, `python -m app.etl fred` (y `todo`) baja las cotizaciones con la descarga CSV del propio sitio de FRED (`https://fred.stlouisfed.org/graph/fredgraph.csv?id=SP500`, el enlace "Download" de cada gráfica), con el mismo resultado; el registro avisa `FRED: sin FRED_API_KEY, se usa la descarga CSV ...`. Si un indicador falla (error HTTP o una respuesta que no es el CSV esperado, por ejemplo una página HTML), se guardan los demás y el comando termina con `Error (FRED): Fallaron N indicador(es) de FRED: ...`.
+
+Para usar la API oficial (Banco de la Reserva Federal de St. Louis) hace falta una clave gratuita:
 
 1. Crear una cuenta en https://fredaccount.stlouisfed.org/login/secure/ (se puede entrar con Google).
 2. Entrar a https://fredaccount.stlouisfed.org/apikeys, **Request API Key**, escribir para qué se usa (por ejemplo «Plataforma de datos económicos, uso interno») y aceptar los términos.
 3. Copiar la clave (32 letras minúsculas y números) en `FRED_API_KEY` del `.env` y recrear el contenedor: `podman-compose up -d --force-recreate app`.
 
-Sin clave, `python -m app.etl fred` termina con `Error (FRED): Falta la clave de FRED ...` y `todo` carga las demás fuentes e informa a FRED entre las que fallaron. La clave no se escribe en el registro.
+Con clave se usa la API; si la clave no vale, la carga de FRED se corta con `Error (FRED): FRED rechazó la clave ...`. La clave no se escribe en el registro.
 
 **Licencias**: las series de FRED no son todas de libre uso. El S&P 500 y el Dow Jones son de S&P Dow Jones Indices y el Nasdaq Composite de Nasdaq, Inc.: tienen copyright y restricciones de redistribución, y FRED solo publica los últimos 10 años del S&P 500 y del Dow Jones (por eso empiezan en 2016). Los precios del petróleo y del gas son de la EIA (gobierno de EE.UU.). Antes de publicar abiertamente o cobrar hay que leer la nota de copyright de cada serie: `https://api.stlouisfed.org/fred/series?series_id=SP500&api_key=TU_CLAVE&file_type=json` (campo `notes`) y los términos de FRED (https://fred.stlouisfed.org/legal/).
 
@@ -123,11 +125,11 @@ podman-compose exec app python -m app.etl ine                       # IPC y dese
 podman-compose exec app python -m app.etl ine --indicadores ECH0013 # solo el desempleo
 podman-compose exec app python -m app.etl bcu                       # dólar interbancario (servicio web del BCU)
 podman-compose exec app python -m app.etl bcu --desde 2000-01-01    # volver a bajar toda la serie
-podman-compose exec app python -m app.etl fred                      # bolsa y materias primas (requiere FRED_API_KEY)
+podman-compose exec app python -m app.etl fred                      # bolsa y materias primas (API con FRED_API_KEY; sin clave, CSV)
 podman-compose exec app python -m app.etl fred --indicadores SP500,DCOILWTICO --desde 2020-01-01
 ```
 
-FRED se baja entera la primera vez (todo el historial que publica de cada serie) y después retoma 10 días antes de la última cotización guardada. Los días sin cotización (FRED los marca con ".") no se guardan. Si una serie no existe en FRED o viene vacía, se avisa en el registro y se sigue con las demás.
+FRED se baja entera la primera vez (todo el historial que publica de cada serie) y después retoma 10 días antes de la última cotización guardada. Los días sin cotización (FRED los marca con "." en la API y vacíos en el CSV) no se guardan. Si una serie no existe en FRED o viene vacía, se avisa en el registro y se sigue con las demás.
 
 La primera carga del BCU baja la serie desde 2000 (un pedido por año, porque el servicio acepta hasta 366 días por pedido); las siguientes retoman 10 días antes de la última cotización guardada. El INE se baja entero cada vez (las planillas son chicas y el INE revisa cifras pasadas).
 

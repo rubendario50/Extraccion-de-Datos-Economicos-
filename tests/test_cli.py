@@ -143,14 +143,34 @@ def test_todo_si_fallan_todas_las_fuentes(cli_simulado, capsys, monkeypatch):
     assert "Se cargaron" not in err and "Traceback" not in err
 
 
-def test_todo_sin_clave_de_fred_sigue_con_las_demas(cli_simulado, capsys, monkeypatch):
+def test_todo_sin_clave_de_fred_usa_la_descarga_csv(cli_simulado, capsys, monkeypatch, caplog):
     monkeypatch.setattr(fred, "clave_api", lambda: "")
-    assert cli.main(["todo"]) == 1
-    err = capsys.readouterr().err
-    assert "Error (FRED): Falta la clave de FRED: completá FRED_API_KEY" in err
-    assert "https://fredaccount.stlouisfed.org/apikeys" in err
-    assert "Fallaron: FRED. Se cargaron: FMI, Banco Mundial, INE, BCU." in err
-    assert contar(cli_simulado, CotizacionDiaria) == 11  # el dólar del BCU sí
+    with caplog.at_level("INFO"):
+        assert cli.main(["todo"]) == 0
+    salida = capsys.readouterr()
+    assert "SP500: 13 valores" in salida.out and "DCOILWTICO: 13 valores" in salida.out and "DJIA: 0 valores" in salida.out
+    assert "Fallaron" not in salida.err
+    assert "se usa la descarga CSV" in caplog.text
+    assert contar(cli_simulado, CotizacionDiaria) == 11 + 26
+
+
+def test_fred_sin_clave_con_un_indicador_caido_carga_los_demas_y_sale_con_error(cli_simulado, capsys, monkeypatch):
+    base = transporte_fred()
+
+    def responder(pedido):
+        if pedido.url.params.get("id") == "SP500":
+            return httpx.Response(200, text="<html>Mantenimiento</html>")
+        return base.handle_request(pedido)
+
+    monkeypatch.setattr(fred, "clave_api", lambda: "")
+    monkeypatch.setattr(fred, "crear_cliente", lambda: httpx.Client(transport=httpx.MockTransport(responder), base_url="https://fred.test/fred"))
+    assert cli.main(["semillas"]) == 0
+    assert cli.main(["fred"]) == 1
+    salida = capsys.readouterr()
+    assert "DCOILWTICO: 13 valores" in salida.out
+    assert "Error (FRED): Fallaron 1 indicador(es) de FRED: SP500" in salida.err and "no tiene la forma esperada" in salida.err
+    assert "Traceback" not in salida.err
+    assert contar(cli_simulado, CotizacionDiaria) == 13
 
 
 def test_fred_con_indicadores_y_desde(cli_simulado, capsys):

@@ -5,7 +5,7 @@
     python -m app.etl bm [--indicadores NY.GDP.MKTP.CD,SP.POP.TOTL]
     python -m app.etl ine [--indicadores IPC_GENERAL,ECH0013]
     python -m app.etl bcu [--indicadores 2225] [--desde 2000-01-01]
-    python -m app.etl fred [--indicadores SP500,DCOILWTICO] [--desde 2020-01-01]   # requiere FRED_API_KEY
+    python -m app.etl fred [--indicadores SP500,DCOILWTICO] [--desde 2020-01-01]   # API con FRED_API_KEY; sin clave, CSV
     python -m app.etl todo        # semillas + fmi + bm + ine + bcu + fred
 """
 
@@ -54,7 +54,7 @@ def main(argv: list[str] | None = None) -> int:
         "--desde", type=date.fromisoformat,
         help="Primera fecha (AAAA-MM-DD). Por defecto retoma desde la última cotización guardada, o desde 2000",
     )
-    p_fred = sub.add_parser("fred", help="Descarga cotizaciones de bolsa y materias primas de FRED (requiere FRED_API_KEY)")
+    p_fred = sub.add_parser("fred", help="Descarga cotizaciones de bolsa y materias primas de FRED (API si hay FRED_API_KEY; si no, descarga CSV)")
     p_fred.add_argument("--indicadores", help="Códigos de FRED separados por coma (por defecto, todos los definidos)")
     p_fred.add_argument(
         "--desde", type=date.fromisoformat,

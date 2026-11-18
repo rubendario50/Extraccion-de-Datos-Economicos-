@@ -21,7 +21,7 @@ class Settings(BaseSettings):
     smtp_user: str = ""
     smtp_password: str = ""
     smtp_from: str = ""  # vacío: se usa SMTP_USER
-    # Clave de la API de FRED (cotizaciones de bolsa y materias primas). Sin ella no se carga FRED.
+    # Clave de la API de FRED (cotizaciones de bolsa y materias primas). Opcional: sin ella se usa la descarga CSV.
     fred_api_key: str = ""
 
 

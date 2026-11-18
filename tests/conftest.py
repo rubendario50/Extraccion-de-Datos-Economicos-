@@ -222,16 +222,33 @@ def transporte_fred(llamadas: list | None = None) -> httpx.MockTransport:
 
     Como la API real: sin clave o con otra clave responde 400 con `error_message`; una serie sin fixture,
     400 "The series does not exist."; respeta `observation_start` y `observation_end`.
+
+    También simula la descarga sin clave (fred.stlouisfed.org/graph/fredgraph.csv?id=...) con
+    tests/fixtures/fred_<SERIE>.csv: una serie sin fixture da 404 con una página HTML; respeta `cosd` y
+    `coed`, pero si la ventana no tiene datos devuelve la serie entera, como FRED.
     """
     from datetime import date
 
     def error(mensaje: str) -> httpx.Response:
         return httpx.Response(400, json={"error_code": 400, "error_message": f"Bad Request.  {mensaje}"})
 
+    def responder_csv(params) -> httpx.Response:
+        archivo = FIXTURES / f"fred_{params.get('id')}.csv"
+        if not archivo.exists():
+            return httpx.Response(404, text="<!DOCTYPE html><html><title>Error - St. Louis Fed</title></html>")
+        encabezado, *filas = archivo.read_text(encoding="utf-8").splitlines()
+        desde = date.fromisoformat(params.get("cosd", "1600-01-01"))
+        hasta = date.fromisoformat(params.get("coed", "9999-12-31"))
+        en_rango = [f for f in filas if desde <= date.fromisoformat(f.split(",")[0]) <= hasta]
+        texto = "\n".join([encabezado, *(en_rango or filas)]) + "\n"
+        return httpx.Response(200, text=texto, headers={"content-type": "application/csv"})
+
     def responder(pedido: httpx.Request) -> httpx.Response:
         params = pedido.url.params
         if llamadas is not None:
             llamadas.append(dict(params))
+        if pedido.url.host == "fred.stlouisfed.org" and pedido.url.path == "/graph/fredgraph.csv":
+            return responder_csv(params)
         if not pedido.url.path.endswith("/series/observations"):
             return httpx.Response(404)
         if not params.get("api_key"):

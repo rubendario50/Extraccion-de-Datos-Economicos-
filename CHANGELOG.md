@@ -23,6 +23,26 @@ y el proyecto usa [versionado semántico](https://semver.org/lang/es/).
   sin Arabia Saudita, OCDE 38) y la regla de cobertura completa, que deja años
   vacíos (por ejemplo América Latina sin Cuba en el Banco Mundial desde 2021).
 
+## [0.3.4] - 2026-11-18
+
+FRED se carga sin necesidad de clave.
+
+### Cambiado
+
+- FRED se carga sin clave: si `FRED_API_KEY` está vacía, `python -m app.etl fred` y `todo` usan la
+  descarga CSV del propio sitio de FRED (`fred.stlouisfed.org/graph/fredgraph.csv?id=<serie>`), con el
+  mismo resultado (cierre del día, carga incremental, días vacíos sin guardar). Con clave se sigue
+  usando la API. La clave pasa a ser opcional.
+- En la descarga CSV, si un indicador falla (error HTTP o una respuesta que no es el CSV esperado,
+  por ejemplo una página HTML) se guardan los demás y la carga termina informando cuáles fallaron.
+
+### Para actualizar
+
+1. Reconstruir y recrear el contenedor para tomar la nueva carga de FRED:
+   `podman-compose up -d --build --force-recreate`.
+2. Luego cargar FRED (ya no hace falta clave):
+   `podman-compose exec app python -m app.etl fred`.
+
 ## [0.3.3] - 2026-11-18
 
 Correcciones en la carga del Banco Mundial, en los ejes de la gráfica y en el buscador de países.
