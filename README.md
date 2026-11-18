@@ -11,7 +11,7 @@ Plataforma de recopilación, análisis y difusión de datos económicos internac
 
 ## Estado
 
-Versión actual: 0.3.2 (ver `CHANGELOG.md`).
+Versión actual: 0.3.3 (ver `CHANGELOG.md`).
 
 Desde la 0.1: base de datos PostgreSQL en Podman, tabla maestra de países (`data/seed/paises.csv`), carga del PBI del FMI DataMapper (PBI en dólares corrientes y crecimiento real) y una web con login (contraseña o Google, doble factor obligatorio) donde se eligen indicador, países y años y se ven la gráfica y la tabla, con opción de índice base 100. La arquitectura está en `docs/arquitectura.md`.
 
@@ -132,6 +132,8 @@ FRED se baja entera la primera vez (todo el historial que publica de cada serie)
 La primera carga del BCU baja la serie desde 2000 (un pedido por año, porque el servicio acepta hasta 366 días por pedido); las siguientes retoman 10 días antes de la última cotización guardada. El INE se baja entero cada vez (las planillas son chicas y el INE revisa cifras pasadas).
 
 Los códigos de país que la fuente publica y no están en `paises.csv` se avisan en el registro (`WARNING ... sin mapear`). Los agregados del Banco Mundial sin equivalente en el FMI (regiones propias del BM, grupos de ingreso) se omiten.
+
+Al Banco Mundial se le pide siempre la base World Development Indicators (`source=2`); si responde un indicador desde otra base, ese indicador falla en lugar de guardar datos parciales. Si un indicador del BM falla (otra base, error del BM o del servidor tras los reintentos), se cargan los demás y al final se informa cuáles fallaron, con código de salida 1.
 
 Las cargas son idempotentes: se pueden repetir para actualizar los valores sin duplicarlos.
 

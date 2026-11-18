@@ -77,6 +77,23 @@ def test_bm_sin_semillas_da_error(cli_simulado, capsys):
     assert "semillas" in capsys.readouterr().err
 
 
+def test_bm_con_un_indicador_caido_carga_los_demas_y_sale_con_error(cli_simulado, capsys, monkeypatch):
+    base = transporte_bm()
+
+    def responder(pedido):
+        if pedido.url.path.endswith("/GC.DOD.TOTL.GD.ZS"):
+            return httpx.Response(502)
+        return base.handle_request(pedido)
+
+    monkeypatch.setattr(banco_mundial, "crear_cliente", lambda: httpx.Client(transport=httpx.MockTransport(responder), base_url="https://bm.test/v2"))
+    assert cli.main(["semillas"]) == 0
+    assert cli.main(["bm"]) == 1
+    salida = capsys.readouterr()
+    assert "SP.POP.TOTL: 6 valores" in salida.out
+    assert "GC.DOD.TOTL.GD.ZS" in salida.err and "502" in salida.err
+    assert por_fuente(cli_simulado) == {"BM": 26}
+
+
 def test_todo_sigue_si_falla_una_fuente(cli_simulado, capsys, monkeypatch):
     # El INE responde una página HTML en lugar de la planilla y el BCU un XML cortado: se cargan las demás.
     html = httpx.MockTransport(lambda p: httpx.Response(200, text="<html>Mantenimiento</html>"))

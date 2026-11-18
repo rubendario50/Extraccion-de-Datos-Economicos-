@@ -3,6 +3,8 @@
 Se saltean si Playwright o su Chromium no están instalados (`pip install playwright && playwright install chromium`).
 """
 
+import json
+import math
 import re
 import secrets
 import threading
@@ -805,3 +807,132 @@ def test_marca_en_el_doble_factor_no_lleva_al_panel(servidor, navegador):
         assert pg.locator("#codigo").count() == 1 and pg.locator("#filtros").count() == 0
     finally:
         ctx.close()
+
+
+# --- Eje de años: etiquetas sin encimarse ni cortarse (390, 1024 y 1366 px) ---
+
+CAJAS_DE_TEXTO = """() => {
+  const g = echarts.getInstanceByDom(document.getElementById('grafica'));
+  return {ancho: g.getWidth(), textos: g.getZr().storage.getDisplayList()
+    .filter((e) => e.style && e.style.text && !e.invisible && (e.style.opacity ?? 1) > 0)
+    .map((e) => { const r = e.getBoundingRect().clone(); r.applyTransform(e.getComputedTransform());
+      return {t: e.style.text, x: r.x, y: r.y, w: r.width, h: r.height}; })};
+}"""
+
+
+def serie_sintetica(desde, hasta, proyeccion_desde, valor):
+    """Reemplaza los datos de /api/series por años desde..hasta (los fixtures traen pocos años)."""
+    def manejar(route):
+        respuesta = route.fetch()
+        cuerpo = respuesta.json()
+        for k, s in enumerate(cuerpo["series"]):
+            s["datos"] = [{"anio": a, "valor": valor(a, k), "proyeccion": a >= proyeccion_desde}
+                          for a in range(desde, hasta + 1)]
+        route.fulfill(response=respuesta, body=json.dumps(cuerpo))
+    return manejar
+
+
+def textos_en(servidor, navegador, ancho, url, manejar=None):
+    ctx = navegador.new_context(viewport={"width": ancho, "height": 900})
+    ctx.add_cookies([{"name": COOKIE_SESION, "value": servidor, "url": BASE}])
+    pg = ctx.new_page()
+    try:
+        if manejar:
+            pg.route("**/api/series*", manejar)
+        pg.goto(BASE + url)
+        esperar_carga(pg)
+        pg.wait_for_timeout(500)  # el ajuste del eje vuelve a dibujar (con animación)
+        return pg.evaluate(CAJAS_DE_TEXTO)
+    finally:
+        ctx.close()
+
+
+def se_pisan(a, b):
+    return a["x"] < b["x"] + b["w"] - 0.5 and b["x"] < a["x"] + a["w"] - 0.5 and         a["y"] < b["y"] + b["h"] - 0.5 and b["y"] < a["y"] + a["h"] - 0.5
+
+
+def revisar_textos(dibujo):
+    """Ningún texto de la gráfica se sale del lienzo ni se pisa con otro. Devuelve los años del eje X."""
+    textos = dibujo["textos"]
+    for t in textos:
+        assert t["x"] >= 0 and t["x"] + t["w"] <= dibujo["ancho"] + 0.5, f"{t['t']} cortado: {t}"
+    for i, a in enumerate(textos):
+        for b in textos[i + 1:]:
+            assert not se_pisan(a, b), f"{a['t']} y {b['t']} se pisan: {a} {b}"
+    # Los años del eje están en la fila de cuatro cifras más alta (la de abajo es la del deslizador de zoom).
+    anios = [t for t in textos if re.fullmatch(r"\d{4}", t["t"])]
+    if not anios:
+        return []
+    fila = min(t["y"] for t in anios)
+    return sorted((t for t in anios if abs(t["y"] - fila) < 1), key=lambda t: t["x"])
+
+
+@pytest.mark.parametrize("ancho", [390, 1024, 1366])
+@pytest.mark.parametrize("url, desde, hasta, valor", [
+    ("/?indicador=PBI_USD_CORR&fuente=FMI_DM&paises=URY,ARG,WEOWORLD&desde=1980&hasta=2031", 1980, 2031,
+     lambda a, k: (1 + 3 * k) * 10 * 1.05 ** (a - 1980)),
+    # Valores casi iguales: las etiquetas de fin de línea (Uruguay, Argentina) no se pisan.
+    ("/?indicador=PBI_CRECIMIENTO&fuente=FMI_DM&paises=URY,ARG&desde=1990&hasta=2030", 1990, 2030,
+     lambda a, k: 3 * math.sin(a / 3) + 0.05 * k),
+], ids=["pbi-1980-2031", "crecimiento-1990-2030"])
+def test_eje_de_anios_parejo_sin_encimarse_ni_cortarse(servidor, navegador, ancho, url, desde, hasta, valor):
+    dibujo = textos_en(servidor, navegador, ancho, url, serie_sintetica(desde, hasta, 2025, valor))
+    eje = revisar_textos(dibujo)
+    anios = [int(t["t"]) for t in eje]
+    assert len(anios) >= 4
+    # Años redondos, a paso fijo y a la misma distancia entre sí.
+    paso = anios[1] - anios[0]
+    assert paso in (1, 2, 5, 10, 20, 25, 50) and all(a % paso == 0 for a in anios)
+    assert [b - a for a, b in zip(anios, anios[1:])] == [paso] * (len(anios) - 1)
+    centros = [t["x"] + t["w"] / 2 for t in eje]
+    huecos = [b - a for a, b in zip(centros, centros[1:])]
+    assert max(huecos) - min(huecos) < 2
+    # El último año del rango que cae en el paso se ve (no queda cortado ni escondido).
+    assert anios[-1] == hasta - hasta % paso
+
+
+@pytest.mark.parametrize("ancho", [390, 1024, 1366])
+@pytest.mark.parametrize("url", ["/?indicador=DOLAR_INTERBANCARIO", "/?indicador=SP500", "/?indicador=IPC_UY&desde=1937"])
+def test_eje_de_fechas_sin_encimarse_ni_cortarse(servidor, navegador, ancho, url):
+    revisar_textos(textos_en(servidor, navegador, ancho, url))
+
+
+# --- Buscador de países: la lista se cierra al elegir ---
+
+def test_buscador_se_cierra_al_elegir_y_no_tapa_la_casilla_de_base_100(pagina):
+    pagina.set_viewport_size({"width": 1024, "height": 900})
+    pagina.goto(f"{BASE}/?indicador=PBI_USD_CORR&fuente=FMI_DM&paises=URY")
+    esperar_carga(pagina)
+    pagina.locator("#buscar-pais").click()
+    pagina.keyboard.type("Merco")
+    pagina.locator('#opciones-paises .opcion[data-codigo="g:MERCOSUR"]').click()
+    assert pagina.locator("#opciones-paises").is_hidden()
+    assert pagina.get_attribute("#buscar-pais", "aria-expanded") == "false"
+    # El foco sigue en el campo y el clic en la casilla marca la casilla (no elige otra opción).
+    assert pagina.evaluate("() => document.activeElement.id") == "buscar-pais"
+    pagina.locator("label[for=usar-base]").click()
+    assert pagina.is_checked("#usar-base")
+    esperar_carga(pagina)
+    fichas = pagina.locator("#fichas .ficha").evaluate_all("fs => fs.map((f) => f.dataset.codigo)")
+    assert fichas == ["URY", "g:MERCOSUR"]
+
+
+def test_buscador_se_cierra_al_elegir_con_enter_y_se_reabre(pagina):
+    pagina.goto(f"{BASE}/?indicador=PBI_USD_CORR&fuente=FMI_DM&paises=URY")
+    esperar_carga(pagina)
+    campo = pagina.locator("#buscar-pais")
+    campo.click()
+    pagina.keyboard.type("Argen")
+    pagina.keyboard.press("Enter")
+    assert pagina.locator("#opciones-paises").is_hidden()
+    # Un clic en el campo (que ya tiene el foco) la vuelve a abrir, y escribir también.
+    campo.click()
+    assert pagina.locator("#opciones-paises").is_visible()
+    pagina.keyboard.press("Escape")
+    assert pagina.locator("#opciones-paises").is_hidden()
+    campo.click()
+    assert pagina.locator("#opciones-paises").is_visible()
+    assert pagina.get_attribute("#buscar-pais", "aria-expanded") == "true"
+    pagina.keyboard.press("Escape")
+    pagina.keyboard.type("Est")
+    assert pagina.locator("#opciones-paises").is_visible()

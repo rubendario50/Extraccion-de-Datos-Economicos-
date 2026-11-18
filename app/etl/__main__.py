@@ -27,7 +27,14 @@ def _codigos(texto: str | None) -> list[str] | None:
 
 def _cargar(modulo, cargador, sesion, codigos, **opciones) -> None:
     with modulo.crear_cliente() as cliente:
-        for codigo, cantidad in cargador(sesion, cliente, codigos, **opciones).items():
+        try:
+            resultado = cargador(sesion, cliente, codigos, **opciones)
+        except ValueError as e:
+            # Carga parcial (p. ej. CargaBMIncompleta): se muestra lo guardado y se informa el error.
+            for codigo, cantidad in getattr(e, "guardados", {}).items():
+                print(f"{codigo}: {cantidad} valores")
+            raise
+        for codigo, cantidad in resultado.items():
             print(f"{codigo}: {cantidad} valores")
 
 

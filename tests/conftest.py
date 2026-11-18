@@ -3,13 +3,25 @@ import os
 from pathlib import Path
 
 # Antes de importar la app: la configuración se lee una sola vez.
-os.environ.setdefault("SECRET_KEY", "clave-solo-para-los-tests")
-os.environ.setdefault("COOKIE_SECURE", "false")
-# Aunque el .env de la PC tenga Gmail configurado, los tests nunca mandan correo de verdad.
-os.environ["SMTP_USER"] = ""
-os.environ["SMTP_PASSWORD"] = ""
-# Ni la clave real de FRED: los tests que la necesitan pasan una de prueba.
-os.environ["FRED_API_KEY"] = ""
+# Los tests no leen el .env de la PC (BASE_URL, Google, Gmail, FRED...): usan solo estos valores y los
+# predeterminados de Settings. En producción nada cambia: esto solo corre con pytest.
+from app.config import Settings  # noqa: E402
+
+Settings.model_config["env_file"] = None
+os.environ.update({
+    "SECRET_KEY": "clave-solo-para-los-tests",
+    "COOKIE_SECURE": "false",
+    "BASE_URL": "http://localhost:8000",
+    "ADMIN_EMAIL": "",
+    "GOOGLE_CLIENT_ID": "",
+    "GOOGLE_CLIENT_SECRET": "",
+    # Aunque la PC tenga Gmail configurado, los tests nunca mandan correo de verdad.
+    "SMTP_USER": "",
+    "SMTP_PASSWORD": "",
+    "SMTP_FROM": "",
+    # Ni la clave real de FRED: los tests que la necesitan pasan una de prueba.
+    "FRED_API_KEY": "",
+})
 
 import httpx
 import pytest
@@ -68,7 +80,7 @@ def cliente_fmi():
 def transporte_bm(llamadas: list | None = None, filas: dict[str, list] | None = None) -> httpx.MockTransport:
     """Simula la API del Banco Mundial con tests/fixtures/bm_<CODIGO>.json (o con `filas`, si se pasa).
 
-    Respeta `per_page` y `page` como la API real: [metadatos, filas de la página].
+    Respeta `per_page`, `page` y `source` como la API real: [metadatos, filas de la página].
     """
 
     def responder(pedido: httpx.Request) -> httpx.Response:
@@ -93,6 +105,9 @@ def transporte_bm(llamadas: list | None = None, filas: dict[str, list] | None = 
         pagina = int(pedido.url.params.get("page", 1))
         paginas = max(1, -(-len(todas) // por_pagina))
         meta = {"page": pagina, "pages": paginas, "per_page": por_pagina, "total": len(todas)}
+        if nombre != "paises":
+            # Como la API real: con source=2 responde la base WDI; sin él, a veces otra (sourceid null).
+            meta["sourceid"] = pedido.url.params.get("source")
         return httpx.Response(200, json=[meta, todas[(pagina - 1) * por_pagina : pagina * por_pagina] or None])
 
     return httpx.MockTransport(responder)

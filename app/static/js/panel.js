@@ -413,7 +413,9 @@
     asignarRanura(codigo);
     el.buscar.value = "";
     pintarFichas();
-    abrirOpciones();
+    // La lista se cierra al elegir (si no, tapa los controles de abajo y un clic ahí elegiría otra opción).
+    // El foco queda en el campo: escribir, la flecha abajo o un clic la vuelven a abrir.
+    cerrarOpciones();
     pedirSeries();
   }
 
@@ -432,6 +434,8 @@
       el.buscar.focus();
     } else if (!e.target.closest(".opciones")) {
       el.buscar.focus();
+      // Si el campo ya tenía el foco (después de elegir o de Escape), el clic igual abre la lista.
+      if (el.opciones.hidden) abrirOpciones();
     }
   });
   el.buscar.addEventListener("focus", abrirOpciones);
@@ -610,6 +614,19 @@
   // ---------- Gráfica ----------
 
   let grafica = null;
+  // Eje de años: se muestra un año cada `pasoEje` (años redondos: múltiplos del paso), elegido según el
+  // ancho disponible para que las etiquetas no se encimen. `ejeAnual`: lista de años del eje, o null si el
+  // eje es de fechas. `textoSlider`: la etiqueta más ancha del deslizador de zoom (para que no se corte).
+  let pasoEje = 1;
+  let ejeAnual = null;
+  let textoSlider = "";
+  const PASOS_EJE = [1, 2, 5, 10, 20, 25, 50, 100];
+  const SEPARACION_ETIQUETAS = 16; // px libres entre dos años del eje
+  const medidor = document.createElement("canvas").getContext("2d");
+  function anchoTexto(texto, familia) {
+    medidor.font = `12px ${familia}`;
+    return medidor.measureText(texto).width;
+  }
   // origenGrafica[k]: índice en la respuesta de la serie k de ECharts (null en la serie auxiliar de la banda).
   let origenGrafica = [];
 
@@ -630,7 +647,53 @@
       const hermanos = tramosHermanos(e.seriesIndex);
       if (hermanos.length) grafica.dispatchAction({ type: "downplay", seriesIndex: [e.seriesIndex, ...hermanos] });
     });
+    // Con zoom entran menos años: se recalcula cada cuántos se escribe uno.
+    grafica.on("datazoom", ajustarEje);
   }
+
+  // Después de dibujar (y al cambiar el tamaño o el zoom), con las medidas reales del área de la gráfica:
+  // 1) el paso de los años del eje, para que no se encimen; 2) los márgenes del deslizador de zoom, para
+  // que sus etiquetas (el primer y el último período) no queden cortadas por los bordes.
+  function ajustarEje() {
+    if (!grafica || !ultimaRespuesta) return;
+    let area;
+    try {
+      area = grafica.getModel().getComponent("grid").coordinateSystem.getRect();
+    } catch (_) {
+      return;
+    }
+    const cambios = {};
+    const familia = colores().cifras;
+    if (ejeAnual && ejeAnual.length > 1) {
+      const zoom = (grafica.getOption().dataZoom || [])[0] || {};
+      const desde = zoom.startValue ?? 0;
+      const hasta = zoom.endValue ?? ejeAnual.length - 1;
+      const porAnio = area.width / Math.max(1, hasta - desde);
+      const necesario = anchoTexto("0000", familia) + SEPARACION_ETIQUETAS;
+      const paso = PASOS_EJE.find((p) => p * porAnio >= necesario) || PASOS_EJE[PASOS_EJE.length - 1];
+      if (paso !== pasoEje) {
+        pasoEje = paso;
+        cambios.xAxis = { axisLabel: { interval: intervaloAnios } };
+      }
+    }
+    const margen = Math.ceil(anchoTexto(textoSlider, familia)) + 16;
+    const izquierda = Math.max(Math.round(area.x), margen);
+    const derecha = Math.max(Math.round(grafica.getWidth() - area.x - area.width), margen);
+    // Con `left` y `width` (si no, ECharts toma el ancho del área de la gráfica y se pasa del borde).
+    const ancho = Math.max(40, grafica.getWidth() - izquierda - derecha);
+    const slider = (grafica.getOption().dataZoom || [])[1] || {};
+    if (slider.left !== izquierda || slider.width !== ancho) cambios.dataZoom = [{}, { left: izquierda, width: ancho }];
+    if (Object.keys(cambios).length) grafica.setOption(cambios);
+  }
+
+  // Margen derecho de la gráfica sin etiquetas de fin de línea: media etiqueta del eje, la más ancha posible.
+  function margenDerecho(conFechas, familia) {
+    const muestras = conFechas ? ["0000", etiquetaEjeTiempo(new Date(2024, 8, 30).getTime()), "sept"] : ["0000"];
+    return Math.max(12, Math.ceil(Math.max(...muestras.map((t) => anchoTexto(t, familia))) / 2) + 6);
+  }
+
+  // Años del eje que llevan etiqueta: los múltiplos del paso (1990, 1995, 2000...), así quedan parejos.
+  const intervaloAnios = (_i, valor) => Number(valor) % pasoEje === 0;
 
   // "rgb(34 211 238 / 0.12)" -> "rgba(34, 211, 238, 0.12)": ECharts calcula sobre los colores y no lee la sintaxis nueva.
   function normalizarColor(c) {
@@ -822,6 +885,16 @@
     const iPrimero = anios.indexOf(primerProyectado);
     const inicioBanda = String(anios[Math.max(0, iPrimero - 1)]);
     const etiquetaProyeccion = textoProyeccion(cuerpo);
+    ejeAnual = conFechas ? null : anios;
+    // Primera estimación del paso (se corrige en ajustarEje con el ancho real del área de la gráfica).
+    if (!conFechas) {
+      const porAnio = (el.grafica.clientWidth - (etiquetas ? 112 : margenDerecho(false, c.cifras)) - 60) / Math.max(1, anios.length - 1);
+      const necesario = anchoTexto("0000", c.cifras) + SEPARACION_ETIQUETAS;
+      pasoEje = PASOS_EJE.find((p) => p * porAnio >= necesario) || PASOS_EJE[PASOS_EJE.length - 1];
+    }
+    textoSlider = [anios[0], anios[anios.length - 1]]
+      .map((a) => (conFechas ? textoPeriodo(a, frecuencia) : String(a)))
+      .reduce((a, b) => (anchoTexto(b, c.cifras) > anchoTexto(a, c.cifras) ? b : a));
 
     const origen = [];
     origenGrafica = origen;
@@ -947,8 +1020,9 @@
         animationEasingUpdate: "cubicOut",
         textStyle: { fontFamily: c.fuente, color: c.tinta2 },
         color: origen.map((o) => c.series[o == null ? 1 : slot(cuerpo.series[o])]),
-        // Con proyección, más aire arriba para el rótulo de la banda.
-        grid: { left: 4, right: etiquetas ? 112 : 12, top: conProyeccion ? 32 : 16, bottom: 64, containLabel: true },
+        // Con proyección, más aire arriba para el rótulo de la banda. Sin etiquetas de fin de línea, a la derecha
+        // entra media etiqueta del eje (la del último año o fecha va centrada en el borde y si no se cortaría).
+        grid: { left: 4, right: etiquetas ? 112 : margenDerecho(conFechas, c.cifras), top: conProyeccion ? 32 : 16, bottom: 64, containLabel: true },
         // La leyenda va en HTML (arriba de la gráfica) para que nunca tape el eje en pantallas angostas.
         legend: { show: false, selected: Object.fromEntries(cuerpo.series.map((s) => [s.nombre, !ocultas.has(claveSerie(s))])) },
         tooltip: {
@@ -1008,14 +1082,14 @@
               boundaryGap: false,
               axisLine: { lineStyle: { color: c.eje } },
               axisTick: { show: false },
-              // Con etiquetas de fin de línea, los años de los extremos van hacia adentro para no pisarlas.
+              // Un año cada `pasoEje`, centrado en su punto: parejos y sin encimarse (ver ajustarEje).
               axisLabel: {
                 color: c.tinta3,
                 fontFamily: c.cifras,
                 fontSize: 12,
                 margin: 12,
                 hideOverlap: true,
-                ...(etiquetas ? { alignMinLabel: "left", alignMaxLabel: "right" } : {}),
+                interval: intervaloAnios,
               },
             },
         yAxis: {
@@ -1054,6 +1128,7 @@
       },
       { notMerge: true }
     );
+    ajustarEje();
 
     if (nacional) el.leyenda.replaceChildren();
     else pintarLeyenda(cuerpo, conProyeccion ? `${etiquetaProyeccion} desde ${primerProyectado}` : null);
@@ -1220,7 +1295,11 @@
   pintarFichas();
 
   document.addEventListener("cambio-tema", alCambiarTema);
-  new ResizeObserver(() => grafica && grafica.resize()).observe(el.grafica);
+  new ResizeObserver(() => {
+    if (!grafica) return;
+    grafica.resize();
+    ajustarEje();
+  }).observe(el.grafica);
   new ResizeObserver(medirCabeza).observe(el.tabla.tHead);
   // Esperar la fuente para que el canvas no dibuje con la de reserva.
   (document.fonts ? document.fonts.ready : Promise.resolve()).then(cargar);

@@ -4,7 +4,7 @@ import httpx
 import pytest
 from sqlalchemy import func, select
 
-from app.etl.banco_mundial import cargar_bm, obtener_todo
+from app.etl.banco_mundial import CargaBMIncompleta, cargar_bm, obtener_todo
 from app.etl.fmi import cargar_fmi
 from app.models import DatoInternacionalAnual, Fuente, Indicador, Pais
 from tests.conftest import transporte_bm
@@ -78,7 +78,7 @@ def test_paginacion(sesion_con_semillas):
     assert resultado == {"NY.GDP.MKTP.CD": 6}
     pedidos = [ll for ll in llamadas if "/indicator/" in ll]
     assert pedidos == [
-        f"/v2/country/all/indicator/NY.GDP.MKTP.CD?format=json&per_page=3&page={n}" for n in (1, 2, 3, 4)
+        f"/v2/country/all/indicator/NY.GDP.MKTP.CD?format=json&per_page=3&page={n}&source=2" for n in (1, 2, 3, 4)
     ]
 
 
@@ -203,3 +203,60 @@ def test_valor_cero_se_guarda(sesion_con_semillas):
     with httpx.Client(transport=transporte_bm(filas=filas), base_url="https://bm.test/v2") as c:
         assert cargar_bm(sesion_con_semillas, c, ["NY.GDP.MKTP.KD.ZG"], espera=0) == {"NY.GDP.MKTP.KD.ZG": 1}
     assert valor(sesion_con_semillas, "URY", "PBI_CRECIMIENTO", 2015) == 0
+
+
+# --- Base WDI (source=2) y fallos por indicador ---
+
+def test_todas_las_consultas_piden_la_base_wdi(sesion_con_semillas):
+    llamadas = []
+    with httpx.Client(transport=transporte_bm(llamadas), base_url="https://bm.test/v2") as c:
+        cargar_bm(sesion_con_semillas, c, espera=0)
+    assert len(llamadas) == 7  # países + 6 indicadores
+    assert all("source=2" in ll.split("?")[1].split("&") for ll in llamadas)
+
+
+def _transporte_con(base, reemplazo):
+    """Transporte BM simulado donde `reemplazo(pedido)` puede devolver otra respuesta (o None)."""
+    def responder(pedido):
+        return reemplazo(pedido) or base.handle_request(pedido)
+    return httpx.MockTransport(responder)
+
+
+def test_otra_base_que_wdi_falla_sin_guardar(sesion_con_semillas):
+    """Si el BM responde con otra base (sourceid distinto de "2"), el indicador falla y no guarda nada."""
+    def otra_base(pedido):
+        if pedido.url.path.endswith("/NE.EXP.GNFS.CD"):
+            meta = {"page": 1, "pages": 1, "per_page": 20000, "total": 239, "sourceid": None}
+            return httpx.Response(200, json=[meta, [fila("URY", 2020, 14e9, codigo="NE.EXP.GNFS.CD")]])
+        return None
+
+    with httpx.Client(transport=_transporte_con(transporte_bm(), otra_base), base_url="https://bm.test/v2") as c:
+        with pytest.raises(CargaBMIncompleta, match="NE.EXP.GNFS.CD") as error:
+            cargar_bm(sesion_con_semillas, c, ["NE.EXP.GNFS.CD"], espera=0)
+    assert "sourceid=None" in str(error.value)
+    assert error.value.guardados == {}
+    assert total(sesion_con_semillas) == 0
+
+
+def test_un_indicador_que_falla_no_corta_los_demas(sesion_con_semillas):
+    """Un 502 persistente en un indicador: se cargan los demás y al final se informa cuál falló."""
+    def caido(pedido):
+        if pedido.url.path.endswith("/GC.DOD.TOTL.GD.ZS"):
+            return httpx.Response(502)
+        return None
+
+    with httpx.Client(transport=_transporte_con(transporte_bm(), caido), base_url="https://bm.test/v2") as c:
+        with pytest.raises(CargaBMIncompleta) as error:
+            cargar_bm(sesion_con_semillas, c, espera=0)
+    assert list(error.value.fallos) == ["GC.DOD.TOTL.GD.ZS"]
+    assert "502" in error.value.fallos["GC.DOD.TOTL.GD.ZS"]
+    assert "GC.DOD.TOTL.GD.ZS" in str(error.value)
+    assert error.value.guardados == {
+        "NE.EXP.GNFS.CD": 4,
+        "NE.IMP.GNFS.CD": 4,
+        "NY.GDP.MKTP.CD": 6,
+        "NY.GDP.MKTP.KD.ZG": 6,
+        "SP.POP.TOTL": 6,
+    }
+    assert total(sesion_con_semillas) == 26
+    assert valor(sesion_con_semillas, "URY", "POBLACION", 2010) == pytest.approx(3.31858)

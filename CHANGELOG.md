@@ -22,7 +22,41 @@ y el proyecto usa [versionado semántico](https://semver.org/lang/es/).
 - Confirmar con Rubén la composición de los grupos (Mercosur con Bolivia, BRICS
   sin Arabia Saudita, OCDE 38) y la regla de cobertura completa, que deja años
   vacíos (por ejemplo América Latina sin Cuba en el Banco Mundial desde 2021).
-- La última etiqueta del eje de fechas queda cortada en el borde derecho de la gráfica.
+
+## [0.3.3] - 2026-11-18
+
+Correcciones en la carga del Banco Mundial, en los ejes de la gráfica y en el buscador de países.
+
+### Corregido
+
+- **Exportaciones del Banco Mundial incompletas.** Sin indicar la base, la API del BM respondía
+  `NE.EXP.GNFS.CD` desde otra base (239 filas, `sourceid` nulo) y se guardaban en silencio solo
+  197 valores. Ahora todas las consultas piden World Development Indicators (`source=2`) y, si la
+  respuesta de un indicador no trae `sourceid` 2, ese indicador falla con un mensaje claro en vez
+  de guardar datos parciales.
+- **Un indicador caído del Banco Mundial ya no corta la carga entera.** Si uno falla (por ejemplo
+  un HTTP 502 tras los reintentos), se cargan los demás y al final se informa cuáles fallaron; el
+  comando sigue saliendo con código 1.
+- **Eje de años de la gráfica.** Las etiquetas se encimaban ("19801983", "20282031") y quedaban
+  con espaciado irregular, y el último año podía quedar cortado por el borde. Ahora se escribe un
+  año redondo cada 1, 2, 5, 10... años según el ancho disponible (también al hacer zoom o cambiar
+  el tamaño de la ventana), parejos y sin salirse de la gráfica en 390, 1024 y 1366 px. En los
+  ejes de fechas la última etiqueta ya no queda cortada en el borde derecho, y las fechas del
+  deslizador de zoom tampoco.
+- **Buscador de países, regiones y grupos.** Al elegir una opción la lista quedaba abierta y
+  tapaba la casilla "Índice base 100": un clic ahí elegía otra opción. Ahora la lista se cierra
+  al elegir (el foco queda en el campo), y un clic en el campo la vuelve a abrir, también después
+  de cerrarla con Escape.
+- **Tests aislados del `.env` local.** La suite ya no lee el `.env` de la PC (por ejemplo un
+  `BASE_URL` de un túnel hacía fallar el test del ingreso con Google): usa sus propios valores. En
+  producción la configuración se sigue leyendo del `.env` como antes.
+
+### Para actualizar
+
+1. Reconstruir y recrear el contenedor para tomar el nuevo `panel.js` y la carga corregida:
+   `podman-compose up -d --build --force-recreate`.
+2. Luego volver a cargar el Banco Mundial para completar las exportaciones:
+   `podman-compose exec app python -m app.etl bm`.
 
 ## [0.3.2] - 2026-11-17
 
